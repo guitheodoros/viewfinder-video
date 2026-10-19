@@ -3087,7 +3087,7 @@ void main(){
   --------------------------------------------------------------------- */
   // kind: 'camera' | 'file'; hwZoom = faixa do zoom da própria câmera, se o
   // navegador expõe (no iPhone quase nunca: aí o zoom é digital)
-  const source = { kind:null, stream:null, track:null, url:null, file:null, facing:'environment', mirror:false, hwZoom:null, startedAt:0, cams:0 };
+  const source = { kind:null, stream:null, track:null, url:null, file:null, fps:0, facing:'environment', mirror:false, hwZoom:null, startedAt:0, cams:0 };
   try { const f = localStorage.getItem('viewfinder-video-facing'); if(f === 'user' || f === 'environment') source.facing = f; } catch(e){}
 
   // sem processamento de voz: o som ambiente sai como o microfone ouve
@@ -3172,7 +3172,29 @@ void main(){
       video.muted = true;
       try { await video.play(); } catch(e2){ /* fica no play do transporte */ }
     }
+    measureFps();
     syncTransport();
+  }
+  // mede os quadros por segundo do arquivo tocando (intervalo entre quadros
+  // novos) e encaixa no valor comum mais perto; acima de 30, usa a metade
+  function measureFps(){
+    source.fps = 0;
+    if(!video.requestVideoFrameCallback) return;
+    const times = [], src = source.url;
+    const step = (now, meta)=>{
+      if(source.url !== src) return;
+      times.push(meta.mediaTime);
+      if(times.length < 16){ video.requestVideoFrameCallback(step); return; }
+      const d = [];
+      for(let i=1; i<times.length; i++){ const x = times[i] - times[i-1]; if(x > 0.004 && x < 0.2) d.push(x); }
+      if(d.length < 5) return;
+      d.sort((a, b)=>a - b);
+      let fps = 1/d[Math.floor(d.length/2)];
+      const common = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60];
+      fps = common.reduce((a, b)=>Math.abs(b - fps) < Math.abs(a - fps) ? b : a);
+      source.fps = fps > 30 ? fps/2 : fps;
+    };
+    video.requestVideoFrameCallback(step);
   }
   function sourceStarted(){
     stopDemo();
@@ -3656,7 +3678,12 @@ void main(){
      decodificado e recodificado em AAC. Sem WebCodecs (ou sem codificar
      o som, quando ele está ligado), cai na exportação em tempo real.
   --------------------------------------------------------------------- */
-  const FF_FPS = 30;
+  // WebKit (Safari, e todo navegador no iPhone): no modo "quality" o
+  // codificador não devolve nenhum quadro e trava; o "realtime" funciona
+  const WEBKIT_ENGINE = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+    || (/Safari\//.test(navigator.userAgent) && !/Chrome|Chromium|Edg|OPR|Firefox/.test(navigator.userAgent));
+  // quadros por segundo da exportação: o do vídeo (medido ao tocar), até 30
+  const exportFps = ()=>source.fps || 30;
   const MUXER_URL = 'https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.mjs';
   let muxerPromise = null;
   function loadMuxer(){
@@ -3667,7 +3694,7 @@ void main(){
   async function pickVideoConfig(w, h){
     const bitrate = state.rec.res === 1080 ? 20e6 : 12e6;
     for(const codec of ['avc1.640028', 'avc1.4D0028', 'avc1.42E028']){
-      const cfg = { codec, width:w, height:h, bitrate, framerate:FF_FPS, latencyMode:'quality', avc:{ format:'avc' } };
+      const cfg = { codec, width:w, height:h, bitrate, framerate:exportFps(), latencyMode:WEBKIT_ENGINE ? 'realtime' : 'quality', avc:{ format:'avc' } };
       try { if((await VideoEncoder.isConfigSupported(cfg)).supported) return cfg; } catch(e){}
     }
     return null;
@@ -3693,10 +3720,27 @@ void main(){
     return Promise.race([promise, new Promise((_, rej)=>{ timer = setTimeout(()=>rej(Object.assign(new Error('timeout: ' + stage), { stage })), ms); })])
       .finally(()=>clearTimeout(timer));
   }
+  // AudioSpecificConfig do AAC-LC (2 bytes). O Safari manda no lugar dela o
+  // descritor MP4 inteiro (esds), e o MP4 sai com o som quebrado; como aqui
+  // é sempre AAC-LC, a descrição é montada sempre aqui mesmo
+  function aacConfig(sampleRate, channels){
+    const rates = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
+    const fi = Math.max(0, rates.indexOf(sampleRate));
+    return new Uint8Array([(2 << 3) | (fi >> 1), ((fi & 1) << 7) | (channels << 3)]);
+  }
   async function encodeAudio(buf, cfg, muxer){
-    let err = null;
-    const enc = new AudioEncoder({ output:(chunk, meta)=>muxer.addAudioChunk(chunk, meta), error:e=>{ err = e; } });
-    enc.configure(cfg);
+    let err = null, first = true;
+    const enc = new AudioEncoder({
+      output:(chunk, meta)=>{
+        if(first){
+          first = false;
+          meta = { decoderConfig:{ codec:'mp4a.40.2', sampleRate:cfg.sampleRate, numberOfChannels:cfg.numberOfChannels, description:aacConfig(cfg.sampleRate, cfg.numberOfChannels) } };
+        }
+        muxer.addAudioChunk(chunk, meta);
+      },
+      error:e=>{ err = e; },
+    });
+    enc.configure(Object.assign({ aac:{ format:'aac' } }, cfg));
     const ch = cfg.numberOfChannels, sr = buf.sampleRate, CH = 4096;
     const planes = Array.from({ length:ch }, (_, c)=>buf.getChannelData(c));
     for(let off=0; off<buf.length; off+=CH){
@@ -3739,6 +3783,7 @@ void main(){
     }
 
     const ff = rec.ff = { cancel:false };
+    const fps = exportFps();
     const wasPaused = video.paused;
     video.pause();
     // desempenho no máximo: não precisa segurar 30 fps
@@ -3764,7 +3809,8 @@ void main(){
     try {
       const muxer = new Mp4.Muxer({
         target:new Mp4.ArrayBufferTarget(),
-        video:{ codec:'avc', width:w, height:h, frameRate:FF_FPS },
+        // frameRate só define a base de tempo (precisa ser inteiro); o tempo real de cada quadro vai no timestamp
+        video:{ codec:'avc', width:w, height:h, frameRate:Math.round(fps) },
         audio:acfg ? { codec:'aac', sampleRate:acfg.sampleRate, numberOfChannels:acfg.numberOfChannels } : undefined,
         fastStart:'in-memory',
         firstTimestampBehavior:'offset',
@@ -3774,13 +3820,14 @@ void main(){
       const enc = new VideoEncoder({ output:(chunk, meta)=>muxer.addVideoChunk(chunk, meta), error:e=>{ encErr = Object.assign(e, { stage:'codificador: ' + (e.message || e.name) }); } });
       try { enc.configure(vcfg); } catch(e){ throw Object.assign(e, { stage:'config ' + vcfg.codec }); }
       let lateSeeks = 0;
-      const total = Math.max(1, Math.floor(video.duration*FF_FPS));
+      const total = Math.max(1, Math.floor(video.duration*fps));
       for(let i=0; i<total; i++){
         if(ff.cancel || !state.live) break;
         if(encErr) throw encErr;
-        const t = i/FF_FPS;
+        // busca no meio do quadro (no começo exato o navegador às vezes mostra o anterior)
+        const t = i/fps, seekT = Math.min(video.duration - 0.001, (i + 0.5)/fps);
         // o quadro não chega: o navegador não está decodificando nas buscas
-        lateSeeks = await seekTo(t) ? lateSeeks + 1 : 0;
+        lateSeeks = await seekTo(seekT) ? lateSeeks + 1 : 0;
         if(lateSeeks >= 3) throw Object.assign(new Error('seek timeout'), { stage:'busca de quadro' });
         if(ff.cancel || !state.live) break;
         sceneClock.ms = t*1000;
@@ -3789,9 +3836,9 @@ void main(){
         uploadSource(srcCanvas);
         render(); // desenha também o quadro da gravação (rec.canvas)
         let frame;
-        try { frame = new VideoFrame(rec.canvas, { timestamp:Math.round(t*1e6), duration:Math.round(1e6/FF_FPS) }); }
+        try { frame = new VideoFrame(rec.canvas, { timestamp:Math.round(t*1e6), duration:Math.round(1e6/fps) }); }
         catch(e){ throw Object.assign(e, { stage:'quadro: ' + (e.message || e.name) }); }
-        enc.encode(frame, { keyFrame:i % (FF_FPS*2) === 0 });
+        enc.encode(frame, { keyFrame:i % Math.round(fps*2) === 0 });
         frame.close();
         recTimer.textContent = `exportando ${Math.min(99, Math.floor((i + 1)/total*100))}%`;
         // não deixa a fila do codificador crescer (memória)

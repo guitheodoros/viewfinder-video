@@ -4,3 +4,9 @@ viewfinder-video-*.mp4
 viewfinder-video-*.MP4
 viewfinder-video-*.webm
 viewfinder-video-*.jpg
+*.mp4
+*.MP4
+*.mov
+*.MOV
+*.webm
+!media/demo.mp4
