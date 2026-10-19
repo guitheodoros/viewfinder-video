@@ -1,0 +1,3424 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Viewfinder Video</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&family=VT323&family=Space+Mono:wght@400;700&family=Michroma&display=swap" rel="stylesheet">
+<script>
+  // tema escolhido antes do primeiro paint: preferência salva, senão escuro
+  (function(){
+    var t = "";
+    try { t = localStorage.getItem("viewfinder-video-theme") || ""; } catch(e){}
+    if (t !== "light") t = "dark";
+    document.documentElement.dataset.theme = t;
+  })();
+</script>
+<style>
+  /* mesmos dois temas do Risograph/Typexperimental: claro (bege) e escuro
+     (grafite), em <html data-theme>. As cores da arte (paleta térmica) ficam
+     no state e não mudam com o tema. */
+  :root{
+    color-scheme:light;
+    --bg:#e8e3d8;
+    --panel:#f5f2ea;
+    --field:#fff;
+    --hover:#ddd8cc;
+    --border:#111;
+    --control:#111;
+    --text:#111;
+    --on-text:#fff;
+    --muted:#6b6558;
+    --accent:#d9481a;
+    --seg-text:var(--text);
+    --swatch-border:rgba(17,17,17,.35);
+    --chk-border:rgba(17,17,17,.4);
+    --btn-top:#2e2e2e; --btn-bottom:#111; --btn-border:#111; --btn-lip:#000;
+    --btn-text:#fff; --btn-hl:rgba(255,255,255,.16);
+    --pri-top:#2e2e2e; --pri-bottom:#111; --pri-border:#111; --pri-lip:#000;
+    --pri-text:#fff; --pri-hl:rgba(255,255,255,.16); --pri-tshadow:#000;
+  }
+  :root[data-theme="dark"]{
+    color-scheme:dark;
+    --bg:#141414;
+    --panel:#1e1e1e;
+    --field:#262626;
+    --hover:#2e2e2e;
+    --border:#3a3a3a;
+    --control:#4a4a4a;
+    --text:#ececec;
+    --on-text:#141414;
+    --muted:#8a8a8a;
+    --accent:#ff7a3d;
+    --seg-text:#bdbdbd;
+    --swatch-border:#6a6a6a;
+    --chk-border:rgba(236,236,236,.35);
+    --btn-top:#3a3a3a; --btn-bottom:#2a2a2a; --btn-border:#4a4a4a; --btn-lip:#0a0a0a;
+    --btn-text:#ececec; --btn-hl:rgba(255,255,255,.1);
+    /* no escuro a ação principal (Export) é o único botão claro */
+    --pri-top:#fff; --pri-bottom:#dcdcdc; --pri-border:#bdbdbd; --pri-lip:#8a8a8a;
+    --pri-text:#141414; --pri-hl:#fff; --pri-tshadow:rgba(255,255,255,.7);
+  }
+  *{box-sizing:border-box;}
+  html, body{ height:100%; }
+  body{
+    margin:0;
+    font-family:"Geist", sans-serif;
+    font-optical-sizing:auto;
+    font-weight:300;
+    background:#000;
+    color:var(--text);
+    overflow:hidden;
+    -webkit-tap-highlight-color:transparent;
+  }
+  /* app em tela cheia: o visor ocupa tudo; no celular os ajustes sobem numa
+     gaveta, no desktop viram uma coluna à direita */
+  #app{ position:fixed; inset:0; display:flex; background:#000; }
+  #viewport{
+    position:relative; flex:1; min-width:0; overflow:hidden; background:#000;
+    touch-action:none; user-select:none; -webkit-user-select:none;
+  }
+  /* o quadro tem o tamanho exato da imagem (contain), medido em JS; as duas
+     camadas (WebGL e OSD em Canvas2D) ocupam o quadro inteiro */
+  #frame{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); line-height:0; }
+  #glCanvas, #overlay{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+  #overlay{ pointer-events:none; }
+  /* o <video> precisa estar "visível" pra alguns navegadores seguirem
+     decodificando quadros; fica minúsculo e transparente */
+  #video{ position:fixed; left:0; top:0; width:2px; height:2px; opacity:0; pointer-events:none; }
+
+  /* HUD por cima do visor: sempre branco sobre preto, independente do tema */
+  .hud{
+    position:absolute; left:0; right:0; z-index:2;
+    display:flex; align-items:center; gap:10px; padding:12px 16px;
+    color:#fff; pointer-events:none;
+  }
+  .hud > *{ pointer-events:auto; }
+  .hud-top{
+    top:0; justify-content:space-between;
+    padding-top:max(12px, env(safe-area-inset-top));
+    background:linear-gradient(rgba(0,0,0,.45), rgba(0,0,0,0));
+  }
+  .hud-bottom{
+    bottom:0; flex-direction:column; gap:14px;
+    padding-bottom:max(18px, env(safe-area-inset-bottom));
+    background:linear-gradient(rgba(0,0,0,0), rgba(0,0,0,.55));
+  }
+  .hud-status{
+    font-family:"Geist Mono", ui-monospace, monospace; font-size:10px; letter-spacing:.3px;
+    opacity:.8; font-variant-numeric:tabular-nums; text-align:right; pointer-events:none;
+  }
+  .round-btn{
+    width:46px; height:46px; flex:none; padding:0; border-radius:50%;
+    display:grid; place-items:center; cursor:pointer;
+    color:#fff; background:rgba(0,0,0,.35); border:1px solid rgba(255,255,255,.3);
+    -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+    transition:transform .1s, background-color .15s;
+  }
+  .round-btn:hover{ background:rgba(255,255,255,.16); }
+  .round-btn:active{ transform:scale(.92); }
+  .round-btn:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
+  .round-btn[hidden]{ display:none; }
+  .round-btn.small{ width:36px; height:36px; }
+  .round-btn svg{ width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+  .round-btn.small svg{ width:16px; height:16px; }
+  .round-btn .fill{ fill:currentColor; stroke:none; }
+  .look-chips{
+    display:flex; gap:2px; padding:3px; border-radius:999px;
+    background:rgba(0,0,0,.45); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+  }
+  .look-chips button{
+    font-family:inherit; font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:.6px;
+    color:rgba(255,255,255,.75); background:transparent; border:none; border-radius:999px;
+    padding:9px 14px; cursor:pointer; transition:background-color .2s, color .2s;
+  }
+  .look-chips button:hover{ color:#fff; }
+  .look-chips button.active{ background:#fff; color:#000; }
+  .look-chips button:focus-visible{ outline:2px solid #fff; outline-offset:1px; }
+  .ctrl-row{ display:flex; align-items:center; justify-content:space-between; width:100%; max-width:400px; }
+  /* lugar do botão de gravar/foto (etapa 2) */
+  .shutter-slot{ width:68px; height:68px; }
+  .transport{
+    display:flex; align-items:center; gap:10px; width:100%; max-width:520px;
+    font-family:"Geist Mono", ui-monospace, monospace; font-size:11px; font-variant-numeric:tabular-nums;
+  }
+  .transport[hidden]{ display:none; }
+  .transport input[type=range]{ flex:1; min-width:0; accent-color:#fff; }
+  /* aviso rápido no centro (look trocado, zoom) */
+  .toast{
+    position:absolute; left:50%; top:50%; z-index:3; transform:translate(-50%,-50%);
+    padding:8px 14px; border-radius:999px; background:rgba(0,0,0,.55); color:#fff;
+    font-size:12px; font-weight:500; letter-spacing:.6px; text-transform:uppercase;
+    pointer-events:none; opacity:0; transition:opacity .25s;
+  }
+  .toast.show{ opacity:1; transition:none; }
+
+  /* tela de abertura */
+  #start{
+    position:absolute; inset:0; z-index:40;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px;
+    padding:24px 16px; text-align:center; background:var(--bg); color:var(--text);
+  }
+  #start[hidden]{ display:none; }
+  #start h1{ font-size:30px; font-weight:600; margin:0; letter-spacing:.5px; }
+  #start .lede{ margin:0 0 14px; font-size:12px; color:var(--muted); max-width:300px; line-height:1.5; }
+  #start .btn{ width:240px; max-width:100%; padding:13px 16px; font-size:12px; }
+  #start .start-msg{ margin:6px 0 0; font-size:11px; color:var(--accent); max-width:300px; line-height:1.5; min-height:1.5em; }
+  #start .start-foot{
+    position:absolute; left:16px; right:16px; bottom:max(16px, env(safe-area-inset-bottom));
+    display:flex; justify-content:space-between; align-items:center; gap:12px;
+    font-size:10px; color:var(--muted);
+  }
+  #start .start-foot a{ color:inherit; text-decoration:none; white-space:nowrap; }
+  #start .start-foot a:hover{ color:var(--text); text-decoration:underline; }
+
+  /* gaveta de ajustes */
+  #sheet{ display:flex; flex-direction:column; background:var(--bg); color:var(--text); min-height:0; }
+  .sheet-grab{ display:none; }
+  .sheet-head{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    padding:12px 16px; border-bottom:2px solid var(--border); flex:none;
+  }
+  .sheet-head h1{ font-size:16px; font-weight:600; margin:0; letter-spacing:.5px; }
+  .sheet-head a{ font-size:11px; color:var(--muted); text-decoration:none; white-space:nowrap; }
+  .sheet-head a:hover{ color:var(--text); text-decoration:underline; }
+  .header-actions{ display:flex; align-items:center; gap:10px; }
+  #themeBtn, #btnSheetClose{
+    width:28px; height:28px; padding:0; display:grid; place-items:center; flex:none;
+    background:var(--field); color:var(--text); border:1px solid var(--control); border-radius:50%;
+    box-shadow:none; text-shadow:none; cursor:pointer;
+  }
+  #themeBtn:hover, #btnSheetClose:hover{ background:var(--hover); }
+  #themeBtn:active, #btnSheetClose:active{ transform:scale(.92); }
+  #themeBtn svg, #btnSheetClose svg{ width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+  :root[data-theme="dark"] #themeBtn .moon, :root:not([data-theme="dark"]) #themeBtn .sun{ display:none; }
+  .sheet-body{ flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:12px 16px calc(16px + env(safe-area-inset-bottom)); }
+  @media (min-width: 900px){
+    #sheet{ width:330px; flex:none; border-left:2px solid var(--border); }
+    #sheet[data-open="false"]{ display:none; }
+  }
+  @media (max-width: 899px){
+    #app{ display:block; }
+    #viewport{ position:absolute; left:0; right:0; top:0; bottom:0; transition:bottom .3s cubic-bezier(.2,.8,.2,1); }
+    /* com a gaveta aberta o visor encolhe pra cima dela */
+    #app.sheet-open #viewport{ bottom:62dvh; }
+    #app.sheet-open .hud-bottom{ display:none; }
+    #sheet{
+      position:fixed; left:0; right:0; bottom:0; z-index:30; height:62vh; height:62dvh;
+      border-top:2px solid var(--border); border-radius:14px 14px 0 0;
+      box-shadow:0 -10px 40px rgba(0,0,0,.4);
+      transform:translateY(100%); visibility:hidden;
+      transition:transform .3s cubic-bezier(.2,.8,.2,1), visibility 0s linear .3s;
+    }
+    #sheet[data-open="true"]{ transform:none; visibility:visible; transition:transform .3s cubic-bezier(.2,.8,.2,1); }
+    .sheet-grab{ display:block; width:36px; height:4px; border-radius:2px; background:var(--muted); margin:8px auto 0; opacity:.6; flex:none; }
+    .sheet-head{ padding-top:8px; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    #viewport, #sheet, #sheet[data-open="true"], .toast{ transition:none !important; }
+  }
+  .panel{
+    background:var(--panel);
+    border:2px solid var(--border);
+    padding:12px;
+    margin-bottom:12px;
+  }
+  .panel h2{
+    font-size:11px;
+    font-weight:600;
+    margin:0 0 10px;
+    text-transform:uppercase;
+    letter-spacing:1px;
+    border-bottom:1px solid var(--border);
+    padding-bottom:6px;
+  }
+  /* painéis recolhíveis: <details name="painel"> é um acordeão nativo,
+     abrir um fecha o que estava aberto */
+  details.panel > summary{ list-style:none; cursor:pointer; user-select:none; }
+  details.panel > summary::-webkit-details-marker{ display:none; }
+  details.panel > summary h2{ display:flex; justify-content:space-between; align-items:center; }
+  details.panel > summary h2::after{ content:"+"; font-size:15px; font-weight:400; line-height:10px; color:var(--muted); }
+  details.panel[open] > summary h2::after{ content:"−"; }
+  details.panel:not([open]) > summary h2{ margin-bottom:0; padding-bottom:0; border-bottom-color:transparent; }
+  details.panel > summary:hover h2::after{ color:var(--text); }
+  details.panel > summary:focus-visible{ outline:2px solid var(--accent); outline-offset:4px; }
+  .row{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:8px;
+    gap:8px;
+  }
+  .row label{ font-size:11px; color:var(--muted); flex:1; }
+  .row .val{ font-size:11px; min-width:34px; text-align:right; font-variant-numeric:tabular-nums; }
+  .row .toggle-group{ flex:2; }
+  input[type=range]{ flex:2; min-width:0; accent-color:var(--text); }
+  input[type=range]:disabled{ opacity:.4; }
+  select, input[type=number]{
+    font-family:inherit;
+    font-size:11px;
+    border:1px solid var(--control);
+    border-radius:3px;
+    background:var(--field);
+    color:var(--text);
+    padding:4px 6px;
+  }
+  select{ flex:2; min-width:0; }
+  input[type=number]{ width:72px; font-variant-numeric:tabular-nums; }
+  select:hover, input[type=number]:hover{ border-color:var(--text); }
+  input[type=number]:focus, select:focus{ outline:none; border-color:var(--text); }
+  input[type=number]:disabled{ opacity:.5; }
+  .row input[type=text], .row textarea{
+    flex:2; min-width:0; font-family:inherit; font-size:11px;
+    border:1px solid var(--control); border-radius:3px; background:var(--field); color:var(--text); padding:4px 6px;
+  }
+  .row textarea{ resize:vertical; min-height:46px; line-height:1.4; }
+  .row input[type=text]:hover, .row textarea:hover{ border-color:var(--text); }
+  .row input[type=text]:focus, .row textarea:focus{ outline:none; border-color:var(--text); }
+  .row.row-top{ align-items:flex-start; }
+  .row.row-top label{ padding-top:5px; }
+  .hint{ font-size:10px; color:var(--muted); margin:2px 0 8px; line-height:1.45; }
+  .hint:empty{ display:none; }
+  .subhead{
+    font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.5px;
+    border-top:1px dashed var(--control); padding-top:8px; margin:10px 0 8px;
+  }
+  /* seletor de cor próprio (porte do Typexperimental): o input nativo fica
+     escondido (continua sendo a fonte do valor e dos eventos) e um botão
+     abre a janelinha .cpick-pop */
+  input[type=color].cpick-native{ display:none; }
+  button.cpick-trigger{
+    display:flex; align-items:center; gap:8px; min-width:0; flex:2;
+    background:var(--field); color:var(--text); border:1px solid var(--control); border-radius:3px;
+    padding:4px 6px; box-shadow:none; text-shadow:none; text-transform:none; letter-spacing:0;
+    font-family:inherit; font-size:11px; font-variant-numeric:tabular-nums; text-align:left; cursor:pointer;
+  }
+  button.cpick-trigger:hover{ border-color:var(--text); }
+  button.cpick-trigger[aria-expanded="true"]{ border-color:var(--text); }
+  .cpick-chip{ width:16px; height:16px; border-radius:3px; flex:none; box-shadow:inset 0 0 0 1px var(--swatch-border); }
+  .cpick-code{ overflow:hidden; white-space:nowrap; color:var(--muted); }
+  .cpick-pop{
+    position:fixed; z-index:50; width:224px; padding:10px; display:grid; grid-template-columns:minmax(0,1fr); gap:10px;
+    background:var(--panel); color:var(--text); border:1px solid var(--control); border-radius:6px;
+    box-shadow:0 12px 32px rgba(0,0,0,.35);
+  }
+  .cpick-pop[hidden]{ display:none; }
+  .cpick-sv{
+    position:relative; height:140px; border-radius:4px; cursor:crosshair; touch-action:none;
+    background-image:linear-gradient(to top, #000, rgba(0,0,0,0)), linear-gradient(to right, #fff, rgba(255,255,255,0));
+  }
+  .cpick-sv:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .cpick-sv-handle{
+    position:absolute; width:14px; height:14px; margin:-7px 0 0 -7px; border-radius:50%;
+    border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,.5), inset 0 0 0 1px rgba(0,0,0,.3); pointer-events:none;
+  }
+  input[type=range].cpick-hue{
+    -webkit-appearance:none; appearance:none; width:100%; height:12px; margin:0; border-radius:6px; flex:none;
+    background:linear-gradient(to right, #f00, #ff0 16.67%, #0f0 33.33%, #0ff 50%, #00f 66.67%, #f0f 83.33%, #f00);
+  }
+  input[type=range].cpick-hue::-webkit-slider-thumb{
+    -webkit-appearance:none; width:14px; height:14px; border-radius:50%; background:transparent;
+    border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,.5); cursor:pointer;
+  }
+  input[type=range].cpick-hue::-moz-range-thumb{
+    width:10px; height:10px; border-radius:50%; background:transparent;
+    border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,.5); cursor:pointer;
+  }
+  input[type=range].cpick-hue:focus-visible{ outline:2px solid var(--accent); outline-offset:3px; }
+  .cpick-hexrow{ display:flex; align-items:center; gap:8px; }
+  .cpick-hexrow .cpick-chip{ width:26px; height:26px; border-radius:4px; }
+  .cpick-hex{
+    flex:1; width:0; min-width:0; font-family:inherit; font-size:12px; font-variant-numeric:tabular-nums;
+    background:var(--field); color:var(--text); border:1px solid var(--control); border-radius:3px; padding:5px 6px;
+  }
+  .cpick-hex:focus{ outline:none; border-color:var(--text); }
+  .cpick-hex.invalid{ border-color:var(--accent); }
+  .cpick-used-label{ font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); margin-bottom:-4px; }
+  .cpick-used{ display:flex; flex-wrap:wrap; gap:7px; }
+  .cpick-dot{
+    width:20px; height:20px; border-radius:50%; padding:0; border:none; cursor:pointer; flex:none;
+    box-shadow:inset 0 0 0 1px var(--swatch-border); transition:transform .2s;
+  }
+  .cpick-dot:hover{ transform:scale(1.1); }
+  .cpick-dot:active{ transform:scale(.9); }
+  .cpick-dot[aria-pressed="true"]{ box-shadow:inset 0 0 0 1px var(--swatch-border), 0 0 0 2px var(--panel), 0 0 0 4px var(--text); }
+  /* checkbox animado (Animated Checkbox do Spell UI, porte do Typexperimental) */
+  .check{ display:flex; align-items:center; gap:6px; margin-bottom:8px; }
+  .check label{ font-size:11px; color:var(--muted); cursor:pointer; transition:color .2s; }
+  .check input:checked + label{ color:var(--text); }
+  .check input[type=checkbox]{
+    appearance:none; -webkit-appearance:none; margin:0; flex:none;
+    width:16px; height:16px; border:1.5px solid var(--chk-border); border-radius:3px;
+    background:transparent; cursor:pointer; position:relative; display:grid; place-items:center;
+    transition:background-color .2s, border-color .2s, transform .25s cubic-bezier(.34,1.56,.64,1);
+  }
+  .check input[type=checkbox]:hover{ border-color:var(--text); }
+  .check input[type=checkbox]:active{ transform:scale(.88); }
+  .check input[type=checkbox]:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .check input[type=checkbox]:checked{ background:var(--text); border-color:var(--text); }
+  .check input[type=checkbox]::after{
+    content:""; width:11px; height:9px; background:var(--panel);
+    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 11 9'%3E%3Cpath d='M1 5l3 3 6-7' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
+            mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 11 9'%3E%3Cpath d='M1 5l3 3 6-7' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
+    clip-path:inset(0 100% 0 0);
+  }
+  .check input[type=checkbox]:checked::after{ clip-path:inset(0 0 0 0); transition:clip-path .3s ease-out .05s; }
+  /* botões: Rich Button + Pop Button do Spell UI (porte do Typexperimental) */
+  .btn{
+    font-family:inherit;
+    font-size:11px;
+    font-weight:500;
+    text-transform:uppercase;
+    letter-spacing:.5px;
+    color:var(--btn-text);
+    border:1px solid var(--btn-border);
+    border-radius:3px;
+    padding:7px 10px;
+    cursor:pointer;
+    background:linear-gradient(to bottom, var(--btn-top), var(--btn-bottom));
+    box-shadow:inset 0 1px 0 var(--btn-hl), 0 3px 0 var(--btn-lip);
+    text-shadow:0 1px 0 #000;
+    transition:filter .2s, transform .1s, box-shadow .1s;
+  }
+  .btn:hover{ filter:brightness(1.2); }
+  .btn:active{ transform:translateY(2px); box-shadow:inset 0 1px 0 var(--btn-hl), 0 1px 0 var(--btn-lip); filter:brightness(.95); }
+  .btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .btn:disabled{ cursor:progress; filter:none; transform:none; }
+  .btn.primary{
+    color:var(--pri-text); border-color:var(--pri-border);
+    background:linear-gradient(to bottom, var(--pri-top), var(--pri-bottom));
+    box-shadow:inset 0 1px 0 var(--pri-hl), 0 3px 0 var(--pri-lip);
+    text-shadow:0 1px 0 var(--pri-tshadow);
+  }
+  .btn.primary:active{ box-shadow:inset 0 1px 0 var(--pri-hl), 0 1px 0 var(--pri-lip); }
+  .btn-row{ display:flex; gap:6px; flex-wrap:wrap; }
+  .spinner{
+    display:inline-block; width:12px; height:12px; flex:none; vertical-align:-2px; margin-right:6px;
+    background:currentColor;
+    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cdefs%3E%3ClinearGradient id='a' x1='50%25' x2='50%25' y1='5.271%25' y2='91.793%25'%3E%3Cstop offset='0%25'/%3E%3Cstop offset='100%25' stop-opacity='.55'/%3E%3C/linearGradient%3E%3ClinearGradient id='b' x1='50%25' x2='50%25' y1='15.24%25' y2='87.15%25'%3E%3Cstop offset='0%25' stop-opacity='0'/%3E%3Cstop offset='100%25' stop-opacity='.55'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cg transform='translate(1.5 1.625)'%3E%3Cpath fill='url(%23a)' d='M8.749.021a1.5 1.5 0 0 1 .497 2.958A7.5 7.5 0 0 0 3 10.375a7.5 7.5 0 0 0 7.5 7.5v3c-5.799 0-10.5-4.7-10.5-10.5C0 5.23 3.726.865 8.749.021'/%3E%3Cpath fill='url(%23b)' d='M15.392 2.673a1.5 1.5 0 0 1 2.119-.115A10.48 10.48 0 0 1 21 10.375c0 5.8-4.701 10.5-10.5 10.5v-3a7.5 7.5 0 0 0 5.007-13.084a1.5 1.5 0 0 1-.115-2.118'/%3E%3C/g%3E%3C/svg%3E") center/contain no-repeat;
+            mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cdefs%3E%3ClinearGradient id='a' x1='50%25' x2='50%25' y1='5.271%25' y2='91.793%25'%3E%3Cstop offset='0%25'/%3E%3Cstop offset='100%25' stop-opacity='.55'/%3E%3C/linearGradient%3E%3ClinearGradient id='b' x1='50%25' x2='50%25' y1='15.24%25' y2='87.15%25'%3E%3Cstop offset='0%25' stop-opacity='0'/%3E%3Cstop offset='100%25' stop-opacity='.55'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cg transform='translate(1.5 1.625)'%3E%3Cpath fill='url(%23a)' d='M8.749.021a1.5 1.5 0 0 1 .497 2.958A7.5 7.5 0 0 0 3 10.375a7.5 7.5 0 0 0 7.5 7.5v3c-5.799 0-10.5-4.7-10.5-10.5C0 5.23 3.726.865 8.749.021'/%3E%3Cpath fill='url(%23b)' d='M15.392 2.673a1.5 1.5 0 0 1 2.119-.115A10.48 10.48 0 0 1 21 10.375c0 5.8-4.701 10.5-10.5 10.5v-3a7.5 7.5 0 0 0 5.007-13.084a1.5 1.5 0 0 1-.115-2.118'/%3E%3C/g%3E%3C/svg%3E") center/contain no-repeat;
+    animation:spin 1s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce){
+    .btn, .check input[type=checkbox], .check input[type=checkbox]::after, .check label{ transition:none !important; }
+    .spinner{ animation-duration:3s; }
+  }
+  /* grupo segmentado (Spell UI) */
+  .toggle-group{ display:flex; border:1px solid var(--control); border-radius:3px; overflow:hidden; }
+  .toggle-group button{
+    flex:1;
+    font-family:inherit;
+    font-size:10px;
+    font-weight:500;
+    padding:6px 4px;
+    border:none;
+    background:var(--field);
+    color:var(--seg-text);
+    cursor:pointer;
+    text-transform:uppercase;
+    transition:background-color .15s, color .15s;
+  }
+  .toggle-group button + button{ border-left:1px solid var(--control); }
+  .toggle-group button:hover{ background:var(--hover); color:var(--text); }
+  .toggle-group button.active{ background:var(--text); color:var(--on-text); }
+  .toggle-group button:focus-visible{ outline:2px solid var(--accent); outline-offset:-2px; }
+  /* presets de paleta: nome + faixa com o degradê */
+  .pal-grid{ display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:6px; margin-bottom:10px; }
+  .pal-btn{
+    display:flex; flex-direction:column; gap:5px; padding:6px; min-width:0;
+    background:var(--field); color:var(--seg-text); border:1px solid var(--control); border-radius:3px;
+    font-family:inherit; font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:.3px;
+    text-align:left; cursor:pointer; transition:border-color .15s, color .15s;
+  }
+  .pal-btn span:first-child{ overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  .pal-btn .strip{ height:10px; border-radius:2px; box-shadow:inset 0 0 0 1px var(--swatch-border); }
+  .pal-btn:hover{ border-color:var(--text); color:var(--text); }
+  .pal-btn.active{ border-color:var(--text); box-shadow:0 0 0 1px var(--text); color:var(--text); }
+  .pal-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .pal-preview{ height:14px; border-radius:2px; margin-bottom:10px; box-shadow:inset 0 0 0 1px var(--swatch-border); }
+  /* mini-mapa da grade: um botão por quadro, no arranjo e proporção do layout */
+  .cell-map{
+    display:grid; gap:3px; padding:3px; margin:0 auto 10px; max-width:100%;
+    background:var(--field); border:1px solid var(--control); border-radius:3px;
+  }
+  .cell-map button{
+    min-width:0; min-height:0; padding:0; border:1px solid var(--control); border-radius:2px;
+    background:var(--panel); color:var(--seg-text); font-family:inherit; font-size:10px; font-weight:500;
+    cursor:pointer; transition:background-color .15s, color .15s, border-color .15s;
+  }
+  .cell-map button:hover{ border-color:var(--text); color:var(--text); }
+  .cell-map button.nosignal{ background:#0b17e8; border-color:#0b17e8; color:#fff; }
+  .cell-map button.active{ background:var(--text); border-color:var(--text); color:var(--on-text); }
+  .cell-map button.active.nosignal{ background:#0b17e8; color:#fff; outline:2px solid var(--text); outline-offset:1px; }
+  .cell-map button:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  .stop-row{ display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+  .stop-row input[type=range]{ flex:1; }
+  .stop-row .val{ font-size:11px; min-width:30px; text-align:right; font-variant-numeric:tabular-nums; }
+  .icon-btn{
+    width:22px; height:22px; flex:none; padding:0; display:grid; place-items:center;
+    background:var(--field); color:var(--muted); border:1px solid var(--control); border-radius:3px;
+    font-family:inherit; font-size:13px; line-height:1; cursor:pointer;
+  }
+  .icon-btn:hover:not(:disabled){ color:var(--text); border-color:var(--text); }
+  .icon-btn:disabled{ opacity:.35; cursor:default; }
+  .icon-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  /* rodapé da gaveta: crédito e link para a página inicial */
+  footer{
+    display:flex;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:6px 16px;
+    margin-top:16px;
+    font-size:10px;
+    color:var(--muted);
+    border-top:1px solid var(--muted);
+    padding-top:8px;
+  }
+  footer a{ color:inherit; text-decoration:none; white-space:nowrap; }
+  footer a:hover{ color:var(--text); text-decoration:underline; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="viewport">
+    <div id="frame">
+      <canvas id="glCanvas" width="1280" height="720"></canvas>
+      <canvas id="overlay" width="1280" height="720"></canvas>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <div class="hud hud-top">
+      <button class="round-btn" id="btnHome" type="button" aria-label="Trocar fonte" title="Trocar fonte">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+      </button>
+      <span class="hud-status" id="statusLabel"></span>
+    </div>
+
+    <div class="hud hud-bottom">
+      <div class="transport" id="transport" hidden>
+        <button class="round-btn small" id="btnPlay" type="button" aria-label="Pausar">
+          <svg class="ico-pause" viewBox="0 0 24 24" aria-hidden="true"><path class="fill" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>
+          <svg class="ico-play" viewBox="0 0 24 24" aria-hidden="true" style="display:none"><path class="fill" d="M8 5l11 7-11 7z"/></svg>
+        </button>
+        <input type="range" id="scrub" min="0" max="1000" value="0" autocomplete="off" aria-label="Posição no vídeo">
+        <span id="timeLabel">0:00 / 0:00</span>
+      </div>
+      <div class="look-chips" id="lookGroup" role="group" aria-label="Look">
+        <button type="button" data-v="thermal" class="active">térmico</button>
+        <button type="button" data-v="cctv">cctv</button>
+        <button type="button" data-v="camcorder">camcorder</button>
+      </div>
+      <div class="ctrl-row">
+        <button class="round-btn" id="btnSheet" type="button" aria-label="Ajustes" title="Ajustes" aria-expanded="false" aria-controls="sheet">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+        </button>
+        <div class="shutter-slot" aria-hidden="true"></div>
+        <button class="round-btn" id="btnFlip" type="button" aria-label="Virar câmera" title="Virar câmera" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9a8 8 0 0 1 14-3l2 2M20 15a8 8 0 0 1-14 3l-2-2"/><path d="M20 4v4h-4M4 20v-4h4"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <aside id="sheet" data-open="false" aria-label="Ajustes">
+    <div class="sheet-grab" aria-hidden="true"></div>
+    <div class="sheet-head">
+      <h1>Viewfinder Video</h1>
+      <div class="header-actions">
+        <a href="https://theodoros.cc" target="_blank" rel="noopener">theodoros.cc</a>
+        <button id="themeBtn" type="button">
+          <svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 15.2A8.5 8.5 0 0 1 8.8 3.6 8.5 8.5 0 1 0 20.4 15.2Z"/></svg>
+          <svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </button>
+        <button id="btnSheetClose" type="button" aria-label="Fechar ajustes" title="Fechar ajustes">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="sheet-body">
+
+    <details class="panel" name="painel" id="panelFrame">
+      <summary><h2>Quadro</h2></summary>
+      <div class="row"><label>proporção</label>
+        <div class="toggle-group" id="aspectGroup">
+          <button data-v="auto" class="active">auto</button>
+          <button data-v="16:9">16:9</button>
+          <button data-v="4:3">4:3</button>
+          <button data-v="1:1">1:1</button>
+        </div>
+      </div>
+      <div class="row"><label>desempenho</label>
+        <div class="toggle-group" id="perfGroup">
+          <button data-v="auto" class="active">auto</button>
+          <button data-v="quality">qualidade</button>
+          <button data-v="smooth">fluidez</button>
+        </div>
+      </div>
+      <p class="hint">auto segue o vídeo: com o celular em pé fica vertical, deitado fica horizontal. 4:3 e 1:1 recortam o centro. no desempenho automático a resolução interna baixa sozinha quando o aparelho não segura 30 quadros por segundo.</p>
+    </details>
+
+    <details class="panel" name="painel" id="panelLook" style="display:none;">
+      <summary><h2>Ajustes do look</h2></summary>
+      <div class="row"><label for="lkSat">saturação</label><input type="range" id="lkSat" autocomplete="off" min="0" max="200"><span class="val" id="lkSatVal"></span></div>
+      <div class="row"><label for="lkTemp">frio ↔ quente</label><input type="range" id="lkTemp" autocomplete="off" min="-100" max="100"><span class="val" id="lkTempVal"></span></div>
+      <div class="row"><label for="lkTint">magenta ↔ verde</label><input type="range" id="lkTint" autocomplete="off" min="-100" max="100"><span class="val" id="lkTintVal"></span></div>
+      <div class="row"><label for="lkExposure">exposição</label><input type="range" id="lkExposure" autocomplete="off" min="-50" max="50"><span class="val" id="lkExposureVal"></span></div>
+      <div class="row"><label for="lkContrast">contraste</label><input type="range" id="lkContrast" autocomplete="off" min="-50" max="50"><span class="val" id="lkContrastVal"></span></div>
+      <div class="row"><label for="lkLift">pretos lavados</label><input type="range" id="lkLift" autocomplete="off" min="0" max="50"><span class="val" id="lkLiftVal"></span></div>
+      <div class="row"><label for="lkKeepRed">manter vermelhos</label><input type="range" id="lkKeepRed" autocomplete="off" min="0" max="100"><span class="val" id="lkKeepRedVal"></span></div>
+      <div class="row"><label for="lkSharpen">nitidez</label><input type="range" id="lkSharpen" autocomplete="off" min="0" max="100"><span class="val" id="lkSharpenVal"></span></div>
+      <div class="row"><label for="lkLines">linhas</label><input type="range" id="lkLines" autocomplete="off" min="0" max="100"><span class="val" id="lkLinesVal"></span></div>
+      <p class="hint">"manter vermelhos" segura a cor dos vermelhos mesmo com a imagem dessaturada. no cctv as linhas são o entrelaçado do vídeo; no camcorder, a grade de subpixels da tela LCD.</p>
+    </details>
+
+    <details class="panel" name="painel" id="panelSource">
+      <summary><h2>Fonte do calor</h2></summary>
+      <p class="hint">de onde vem a "temperatura" de cada pixel antes da paleta.</p>
+      <div class="row"><label for="srcRed">luminância → vermelho</label><input type="range" id="srcRed" autocomplete="off" min="0" max="100"><span class="val" id="srcRedVal"></span></div>
+      <div class="row"><label for="srcSkin">pele aquece</label><input type="range" id="srcSkin" autocomplete="off" min="0" max="100"><span class="val" id="srcSkinVal"></span></div>
+      <div class="row"><label for="srcLights">luzes esquentam</label><input type="range" id="srcLights" autocomplete="off" min="0" max="100"><span class="val" id="srcLightsVal"></span></div>
+      <div class="check"><input type="checkbox" id="srcInvert"><label for="srcInvert">inverter (escuro = quente)</label></div>
+      <p class="hint">no canal vermelho a pele tende a ficar mais quente que na luminância. "pele aquece" detecta tons de pele pela cor e esquenta essas áreas mesmo com a fonte invertida. "luzes esquentam" deixa as áreas muito claras (lâmpadas, telas) quentes em qualquer modo.</p>
+    </details>
+
+    <!-- etapa 3: IA por quadro com tracking -->
+    <details class="panel" name="painel" id="panelSeg" hidden>
+      <summary><h2>Pessoa (IA)</h2></summary>
+      <div class="toggle-group" id="segModeGroup" style="margin-bottom:8px;">
+        <button data-v="off" class="active">desligada</button>
+        <button data-v="fast">rápida</button>
+        <button data-v="detail">detalhada</button>
+      </div>
+      <p class="hint" id="segStatus" role="status"></p>
+      <div id="segControls" style="display:none;">
+        <div class="subhead">temperatura por área</div>
+        <div class="row seg-detail"><label for="tFace">pele do rosto</label><input type="range" id="tFace" autocomplete="off" min="100" max="420"><span class="val" id="tFaceVal"></span></div>
+        <div class="row seg-detail"><label for="tBody">pele do corpo</label><input type="range" id="tBody" autocomplete="off" min="100" max="420"><span class="val" id="tBodyVal"></span></div>
+        <div class="row seg-detail"><label for="tCloth">roupa</label><input type="range" id="tCloth" autocomplete="off" min="100" max="420"><span class="val" id="tClothVal"></span></div>
+        <div class="row seg-detail"><label for="tHair">cabelo</label><input type="range" id="tHair" autocomplete="off" min="100" max="420"><span class="val" id="tHairVal"></span></div>
+        <div class="row seg-fast"><label for="tPerson">pessoa</label><input type="range" id="tPerson" autocomplete="off" min="100" max="420"><span class="val" id="tPersonVal"></span></div>
+        <div class="row"><label for="tBg">fundo</label><input type="range" id="tBg" autocomplete="off" min="100" max="420"><span class="val" id="tBgVal"></span></div>
+        <div class="row"><label for="photoInfl">influência da foto</label><input type="range" id="photoInfl" autocomplete="off" min="0" max="100"><span class="val" id="photoInflVal"></span></div>
+        <p class="hint">a "fonte do calor" continua valendo como variação dentro de cada área: em 0% cada área fica com uma temperatura só.</p>
+        <div class="subhead">fundo</div>
+        <div class="row"><label for="bgMode">tratamento</label>
+          <select id="bgMode">
+            <option value="0">térmico (paleta)</option>
+            <option value="1">foto original</option>
+            <option value="2">foto azulada</option>
+            <option value="3">cor chapada</option>
+            <option value="4">transparente</option>
+          </select>
+        </div>
+        <div class="row" id="bgColorRow"><label for="bgColor">cor</label><input type="color" id="bgColor" aria-label="Cor do fundo"></div>
+        <div class="row" id="edgeRow"><label for="edge">borda</label><input type="range" id="edge" autocomplete="off" min="0" max="100"><span class="val" id="edgeVal"></span></div>
+      </div>
+      <p class="hint">roda no seu navegador (MediaPipe): a foto não sai do computador. a rápida (0,25 MB) só recorta a pessoa; a detalhada (16 MB) separa cabelo, pele e roupa. o primeiro uso também baixa o motor da IA (~12 MB).</p>
+    </details>
+
+    <details class="panel" name="painel">
+      <summary><h2>Sensor</h2></summary>
+      <div class="row"><label for="sensorRes">resolução</label>
+        <select id="sensorRes">
+          <option value="0">nativa (sem sensor)</option>
+          <option value="640">640 px</option>
+          <option value="320">320 px</option>
+          <option value="160">160 px</option>
+          <option value="80">80 px</option>
+        </select>
+      </div>
+      <div class="row"><label>ampliação</label>
+        <div class="toggle-group" id="upscaleGroup">
+          <button data-v="smooth" class="active">suave</button>
+          <button data-v="pixel">pixelada</button>
+        </div>
+      </div>
+      <div class="row"><label for="diffusion">difusão</label><input type="range" id="diffusion" autocomplete="off" min="0" max="100"><span class="val" id="diffusionVal"></span></div>
+      <div class="row" id="msxRow"><label for="msx">detalhe msx</label><input type="range" id="msx" autocomplete="off" min="0" max="100"><span class="val" id="msxVal"></span></div>
+      <div class="row"><label for="bloom">bloom</label><input type="range" id="bloom" autocomplete="off" min="0" max="100"><span class="val" id="bloomVal"></span></div>
+      <p class="hint">câmeras térmicas reais têm de 80 a 640 px e o calor se espalha (difusão). o msx soma as bordas da foto original por cima, como nas câmeras FLIR. o bloom faz as áreas mais quentes (ou mais claras, nos looks de vídeo) vazarem um halo em volta.</p>
+    </details>
+
+    <details class="panel" name="painel" id="panelRange">
+      <summary><h2>Faixa</h2></summary>
+      <div class="check"><input type="checkbox" id="rangeAuto" checked><label for="rangeAuto">faixa automática</label></div>
+      <div class="row"><label for="level">nível</label><input type="range" id="level" autocomplete="off" min="0" max="100"><span class="val" id="levelVal"></span></div>
+      <div class="row"><label for="span">span</label><input type="range" id="span" autocomplete="off" min="1" max="100"><span class="val" id="spanVal"></span></div>
+      <div class="row"><label for="gamma">gama</label><input type="range" id="gamma" autocomplete="off" min="30" max="300"><span class="val" id="gammaVal"></span></div>
+      <div class="row"><label for="equalize">equalização</label><input type="range" id="equalize" autocomplete="off" min="0" max="100"><span class="val" id="equalizeVal"></span></div>
+      <div class="row"><label for="poster">isotermas</label><input type="range" id="poster" autocomplete="off" min="1" max="16"><span class="val" id="posterVal"></span></div>
+      <p class="hint">nível e span são os controles de uma câmera térmica: o centro e a largura da faixa de temperatura. mexer neles desliga a faixa automática.</p>
+    </details>
+
+    <details class="panel" name="painel" id="panelPalette">
+      <summary><h2>Paleta</h2></summary>
+      <div class="pal-grid" id="palGrid"></div>
+      <div class="pal-preview" id="palPreview"></div>
+      <div class="check"><input type="checkbox" id="palInvert"><label for="palInvert">inverter paleta</label></div>
+      <div class="row"><label for="cycles">ciclos</label><input type="range" id="cycles" autocomplete="off" min="2" max="10"><span class="val" id="cyclesVal"></span></div>
+      <div class="row"><label for="offset">deslocar</label><input type="range" id="offset" autocomplete="off" min="0" max="100"><span class="val" id="offsetVal"></span></div>
+      <div class="subhead">paradas</div>
+      <div id="palStops"></div>
+      <div class="btn-row" style="margin-top:4px;">
+        <button class="btn" id="btnAddStop" style="flex:1;">+ parada</button>
+        <button class="btn" id="btnReverseStops" style="flex:1;">⇄ inverter</button>
+      </div>
+    </details>
+
+    <details class="panel" name="painel">
+      <summary><h2>Ruído</h2></summary>
+      <div class="row"><label for="grain">grão</label><input type="range" id="grain" autocomplete="off" min="0" max="100"><span class="val" id="grainVal"></span></div>
+      <div class="row"><label for="grainSize">tamanho do grão</label><input type="range" id="grainSize" autocomplete="off" min="1" max="8"><span class="val" id="grainSizeVal"></span></div>
+      <div class="row"><label for="vignette">vinheta</label><input type="range" id="vignette" autocomplete="off" min="0" max="100"><span class="val" id="vignetteVal"></span></div>
+      <div class="row"><label for="fpn">listras do sensor</label><input type="range" id="fpn" autocomplete="off" min="0" max="100"><span class="val" id="fpnVal"></span></div>
+      <p class="hint">o grão entra na temperatura, antes da paleta, então vira pontilhado colorido. a vinheta esfria os cantos. as listras imitam o padrão fixo de linhas e colunas dos sensores térmicos baratos.</p>
+    </details>
+
+    <details class="panel" name="painel" id="panelScale">
+      <summary><h2>Escala</h2></summary>
+      <div class="check"><input type="checkbox" id="scaleShow"><label for="scaleShow">mostrar barra de escala</label></div>
+      <div class="row"><label>posição</label>
+        <div class="toggle-group" id="scalePosGroup">
+          <button data-v="left">esq.</button>
+          <button data-v="right" class="active">dir.</button>
+          <button data-v="bottom">embaixo</button>
+        </div>
+      </div>
+      <div class="check"><input type="checkbox" id="scaleAuto"><label for="scaleAuto">temperaturas da cena</label></div>
+      <div class="row"><label for="tmin">mín. (°C)</label><input type="number" id="tmin" step="0.1" autocomplete="off"></div>
+      <div class="row"><label for="tmax">máx. (°C)</label><input type="number" id="tmax" step="0.1" autocomplete="off"></div>
+      <p class="hint">com "temperaturas da cena" a escala mostra a faixa real da imagem, na mesma régua das temperaturas de "pessoa (ia)".</p>
+      <div class="row"><label>unidade</label>
+        <div class="toggle-group" id="scaleUnitGroup">
+          <button data-v="C" class="active">°C</button>
+          <button data-v="F">°F</button>
+          <button data-v="K">K</button>
+        </div>
+      </div>
+      <div class="row"><label>texto</label>
+        <div class="toggle-group" id="scaleTextGroup">
+          <button data-v="light" class="active">claro</button>
+          <button data-v="dark">escuro</button>
+        </div>
+      </div>
+    </details>
+
+    <details class="panel" name="painel">
+      <summary><h2>OSD</h2></summary>
+      <div class="row"><label for="osdTemplate">template</label>
+        <select id="osdTemplate">
+          <option value="none">nenhum</option>
+          <option value="ircam">ir-cam (térmico)</option>
+          <option value="scan">thermal scan (pôster)</option>
+          <option value="surv">vigilância ia</option>
+          <option value="cctv">cctv</option>
+          <option value="camcorder">camcorder</option>
+        </select>
+      </div>
+      <div id="osdCommon" style="display:none;">
+        <div class="row"><label for="osdFont">fonte</label>
+          <select id="osdFont">
+            <option value="pixel">pixel (VT323)</option>
+            <option value="mono">mono (Space Mono)</option>
+            <option value="tech">tech (Michroma)</option>
+          </select>
+        </div>
+        <div class="row"><label for="osdColor">cor</label><input type="color" id="osdColor" aria-label="Cor do OSD"></div>
+        <div class="row"><label for="osdSize">tamanho</label><input type="range" id="osdSize" autocomplete="off" min="50" max="200"><span class="val" id="osdSizeVal"></span></div>
+        <div class="check"><input type="checkbox" id="osdLowres"><label for="osdLowres">baixa resolução (720p)</label></div>
+        <div class="check"><input type="checkbox" id="osdLive"><label for="osdLive">relógio ao vivo</label></div>
+        <p class="hint" id="osdHint"></p>
+        <div class="subhead">textos</div>
+        <div id="osdFields"></div>
+      </div>
+      <p class="hint">a interface do aparelho por cima da imagem. com o relógio ao vivo, data e hora seguem o relógio de verdade e o timecode corre junto com o vídeo; os outros textos são editáveis.</p>
+    </details>
+
+    <!-- etapa 4: grade com recortes e atraso -->
+    <details class="panel" name="painel" id="panelGrid" hidden>
+      <summary><h2>Grade</h2></summary>
+      <div class="row"><label for="gridLayout">layout</label>
+        <select id="gridLayout">
+          <option value="1x1">quadro único</option>
+          <option value="2x2">2 × 2</option>
+          <option value="2x3">2 colunas × 3</option>
+          <option value="3x2">3 colunas × 2</option>
+          <option value="1p5">1 + 5 (destaque)</option>
+        </select>
+      </div>
+      <div id="gridControls" style="display:none;">
+        <div class="row"><label for="gridGap">fio</label><input type="range" id="gridGap" autocomplete="off" min="0" max="30"><span class="val" id="gridGapVal"></span></div>
+        <div class="row"><label for="gridGapColor">cor do fio</label><input type="color" id="gridGapColor" aria-label="Cor do fio"></div>
+        <div class="row"><label for="gridNoSignal">sem sinal</label><input type="text" id="gridNoSignal" autocomplete="off" spellcheck="false"></div>
+        <button class="btn" id="btnShuffleCells" style="width:100%;margin-bottom:6px;">⟳ sortear enquadramentos</button>
+        <div class="subhead">quadro</div>
+        <div class="cell-map" id="cellSel" role="group" aria-label="Escolher quadro"></div>
+        <div class="row"><label>conteúdo</label>
+          <div class="toggle-group" id="cellMode">
+            <button data-v="image" class="active">imagem</button>
+            <button data-v="nosignal">sem sinal</button>
+          </div>
+        </div>
+        <div class="row"><label for="cellZoom">zoom</label><input type="range" id="cellZoom" autocomplete="off" min="100" max="600"><span class="val" id="cellZoomVal"></span></div>
+        <div class="row"><label for="cellX">posição x</label><input type="range" id="cellX" autocomplete="off" min="0" max="100"><span class="val" id="cellXVal"></span></div>
+        <div class="row"><label for="cellY">posição y</label><input type="range" id="cellY" autocomplete="off" min="0" max="100"><span class="val" id="cellYVal"></span></div>
+      </div>
+      <p class="hint">cada quadro mostra um enquadramento da mesma imagem, com o próprio OSD (câmera, timecode e zoom mudam de quadro pra quadro). o enquadramento automático mira nos rostos e pessoas detectados pela IA.</p>
+    </details>
+
+    <footer>
+      <span>viewfinder video &middot; processamento 100% local no navegador (webgl2) &middot; nenhum vídeo é enviado a servidor</span>
+      <a href="https://guitheodoros.github.io/">&larr; todas as ferramentas</a>
+    </footer>
+    </div>
+  </aside>
+
+  <div id="start">
+    <h1>Viewfinder Video</h1>
+    <p class="lede">câmera térmica, cctv e camcorder ao vivo, direto no navegador.</p>
+    <button class="btn primary" id="btnCam" type="button">● abrir câmera</button>
+    <button class="btn" id="btnFile" type="button">↑ carregar vídeo</button>
+    <p class="start-msg" id="startMsg" role="status"></p>
+    <div class="start-foot">
+      <a href="https://guitheodoros.github.io/">&larr; todas as ferramentas</a>
+      <span>nada sai do seu aparelho</span>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept="video/*" hidden>
+<video id="video" playsinline muted loop></video>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------------------------------------------------------------------
+     PALETAS
+     Paradas sempre do frio pro quente. As que vêm das referências: Ironbow
+     (FLIR), Rainbow (câmeras científicas), Pôster, Nostalgia e Iridescente.
+  --------------------------------------------------------------------- */
+  const PRESETS = [
+    {key:"ironbow",    name:"Ironbow",     stops:["#000000","#1d0b4f","#5a0f8a","#a51c7c","#dc3d3b","#f5831c","#fbc73a","#ffffff"]},
+    {key:"rainbow",    name:"Rainbow",     stops:["#000080","#0000ff","#00a0ff","#00ffd0","#80ff40","#ffff00","#ff8000","#ff0000","#800000"]},
+    {key:"inferno",    name:"Inferno",     stops:["#000004","#320a5e","#781c6d","#bc3754","#ed6925","#fbb61a","#fcffa4"]},
+    {key:"arctic",     name:"Ártico",      stops:["#0b0f3a","#1d3fa8","#2fa4e0","#bfe9ff","#ffd27a","#ff8c3a","#ffffff"]},
+    {key:"poster",     name:"Pôster",      stops:["#1a10c8","#6a1fe0","#c41fc8","#ff2a8a","#ff5a3c","#ff9a1a","#ffe600"]},
+    {key:"nostalgia",  name:"Nostalgia",   stops:["#3438d4","#2aa8e8","#36d67c","#f2e43a","#ff8a1e","#ff2d55","#ff86c8","#ffffff"]},
+    {key:"iridescent", name:"Iridescente", stops:["#173947","#3f9aa6","#7fd6cc","#3b2fd1","#d8287e","#ff4a2a","#ffa51c","#ffe81f"]},
+    {key:"whitehot",   name:"White hot",   stops:["#000000","#ffffff"]},
+    {key:"blackhot",   name:"Black hot",   stops:["#ffffff","#000000"]},
+  ];
+  const evenStops = colors => colors.map((c,i)=>({ color:c, pos:Math.round(i/(colors.length-1)*100) }));
+
+  // tamanho de referência do grão e das listras: definidos relativos a ele,
+  // então qualquer resolução de trabalho sai com o mesmo aspecto
+  const PREVIEW_LONG = 1200;
+  // lado maior da imagem de trabalho (720p); o desempenho automático reduz
+  const WORK_LONG = 1280;
+
+  /* ---------------------------------------------------------------------
+     STATE
+  --------------------------------------------------------------------- */
+  const state = {
+    // live = há quadros chegando da câmera ou do arquivo
+    live: false,
+    // quadro: proporção, desempenho e zoom (óptico quando o aparelho deixa)
+    view: { aspect:'auto', perf:'auto', zoom:1 },
+    src: { red:0, skin:0, lights:0, invert:false },
+    // temperaturas em °C; a régua calor↔°C é T_MIN_C..T_MIN_C+T_SPAN_C
+    seg: { mode:'off', tFace:36.5, tBody:34.5, tCloth:29, tHair:27.5, tPerson:33, tBg:20, photo:35, bg:0, bgColor:'#2f3bd3', edge:50 },
+    sensor: { res:320, pixel:false, diffusion:15, msx:25, bloom:0 },
+    range: { auto:true, level:50, span:100, gamma:1, eq:0, poster:0 },
+    palette: { preset:"ironbow", stops:evenStops(PRESETS[0].stops), invert:false, cycles:1, offset:0 },
+    noise: { grain:8, size:1, vignette:0, fpn:0 },
+    scale: { show:false, auto:true, pos:'right', tmin:20, tmax:38, unit:'C', text:'light' },
+    // textos de cada template ficam em text (preenchido com os padrões em OSD_TEMPLATES)
+    osd: { template:'none', font:'pixel', color:'#7dff9a', size:100, lowres:false, live:true, text:{} },
+    // look da imagem; grade = ajustes de cor do look de vídeo atual
+    look: 'thermal',
+    grade: null,
+    // grade multicâmera: cada quadro é um enquadramento (centro x/y + zoom)
+    grid: { layout:'1x1', gap:6, gapColor:'#000000', noSignal:'No Signal', sel:0, auto:true, cells:[] },
+  };
+  // ajustes iniciais dos looks de vídeo (sensor e ruído são trocados junto)
+  const LOOK_DEFAULTS = {
+    cctv: {
+      sensor:{ res:640, pixel:false, diffusion:6, msx:0, bloom:45 },
+      noise:{ grain:14, size:1, vignette:15, fpn:10 },
+      grade:{ sat:35, temp:-55, tint:5, exposure:12, contrast:-10, lift:14, keepRed:80, sharpen:0, lines:15 },
+    },
+    camcorder: {
+      sensor:{ res:0, pixel:false, diffusion:0, msx:0, bloom:10 },
+      noise:{ grain:6, size:1, vignette:25, fpn:0 },
+      grade:{ sat:120, temp:30, tint:0, exposure:0, contrast:25, lift:2, keepRed:0, sharpen:55, lines:35 },
+    },
+  };
+  state.grade = { ...LOOK_DEFAULTS.cctv.grade };
+  const T_MIN_C = 15, T_SPAN_C = 25;
+  const cToHeat = c => (c - T_MIN_C)/T_SPAN_C;
+  const heatToC = h => T_MIN_C + h*T_SPAN_C;
+
+  const $ = id => document.getElementById(id);
+  const glCanvas = $('glCanvas');
+  const overlay = $('overlay');
+  const octx = overlay.getContext('2d');
+  const frame = $('frame');
+  const viewport = $('viewport');
+  const statusLabel = $('statusLabel');
+  const startScreen = $('start');
+  const startMsg = $('startMsg');
+  const video = $('video');
+  // quadro do vídeo recortado/zoomado na resolução de trabalho (fonte da textura)
+  const srcCanvas = document.createElement('canvas');
+  const sctx = srcCanvas.getContext('2d');
+
+  function hexToRgb(hex){
+    const v = parseInt(hex.slice(1),16);
+    return [((v>>16)&255)/255, ((v>>8)&255)/255, (v&255)/255];
+  }
+  function rgbToHex(rgb){
+    return "#" + rgb.map(c=>Math.round(Math.min(1,Math.max(0,c))*255).toString(16).padStart(2,"0")).join("");
+  }
+
+  /* ---------------------------------------------------------------------
+     WEBGL
+  --------------------------------------------------------------------- */
+  // alpha pro fundo transparente: o passe final sai com cor pré-multiplicada
+  const gl = glCanvas.getContext('webgl2', { preserveDrawingBuffer:true, alpha:true, premultipliedAlpha:true, antialias:false });
+  if(!gl){
+    startMsg.textContent = 'seu navegador não suporta WebGL2, necessário para esta ferramenta.';
+    $('btnCam').disabled = $('btnFile').disabled = true;
+    return;
+  }
+
+  function compileShader(src, type){
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if(!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error("Shader: " + gl.getShaderInfoLog(sh));
+    return sh;
+  }
+  // programa + mapa nome→location de todos os uniforms ativos
+  function makeProgram(fsSrc){
+    const p = gl.createProgram();
+    gl.attachShader(p, compileShader(VERT_QUAD, gl.VERTEX_SHADER));
+    gl.attachShader(p, compileShader(fsSrc, gl.FRAGMENT_SHADER));
+    gl.linkProgram(p);
+    if(!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error("Program: " + gl.getProgramInfoLog(p));
+    const loc = {};
+    const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+    for(let i=0; i<n; i++){
+      const name = gl.getActiveUniform(p, i).name;
+      loc[name] = gl.getUniformLocation(p, name);
+    }
+    return { p, loc };
+  }
+
+  const VERT_QUAD = `#version 300 es
+layout(location=0) in vec2 aPos;
+out vec2 vUv;
+void main(){
+  vUv = aPos*0.5 + 0.5;
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}`;
+
+  // máscara da IA (RGBA8), igual nos dois passes que a usam:
+  // modo 1 (rápida): R = pessoa. Modo 2 (detalhada): R cabelo, G pele do
+  // corpo, B pele do rosto, A roupa+acessórios; fundo = 1 - soma.
+  const MASK_GLSL = `
+float personAmount(vec4 m, int mode){
+  return mode == 1 ? m.r : clamp(m.r + m.g + m.b + m.a, 0.0, 1.0);
+}`;
+
+  // foto → calor. Saída RG: R = calor (0 frio, 1 quente), G = luminância
+  // (usada pelo detalhe MSX no passe final).
+  const FRAG_HEAT = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uSrc;
+uniform sampler2D uMask;
+uniform float uRed;
+uniform float uSkin;
+uniform float uLights;
+uniform int uInvert;
+uniform int uSegMode;
+uniform float uTBg, uTPerson, uTHair, uTBody, uTFace, uTCloth;
+uniform float uPhoto;
+${MASK_GLSL}
+void main(){
+  vec3 c = texture(uSrc, vUv).rgb;
+  float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  float base = mix(lum, c.r, uRed);
+  if(uInvert == 1) base = 1.0 - base;
+  // tom de pele pela distância ao centro da região de pele no plano CbCr
+  float cb = 0.5 - 0.168736*c.r - 0.331264*c.g + 0.5*c.b;
+  float cr = 0.5 + 0.5*c.r - 0.418688*c.g - 0.081312*c.b;
+  float d = length(vec2((cb-0.40)/0.10, (cr-0.60)/0.08));
+  float skin = (1.0 - smoothstep(0.8, 1.6, d)) * smoothstep(0.06, 0.18, lum);
+  float heat = mix(base, max(base, 0.8 + 0.2*lum), skin*uSkin);
+  // com a IA, cada área tem sua temperatura e a foto só varia em volta dela
+  if(uSegMode > 0){
+    vec4 m = texture(uMask, vUv);
+    float t;
+    if(uSegMode == 1) t = mix(uTBg, uTPerson, m.r);
+    else t = uTBg*(1.0 - personAmount(m, 2)) + m.r*uTHair + m.g*uTBody + m.b*uTFace + m.a*uTCloth;
+    heat = t + uPhoto*(heat - 0.5);
+  }
+  heat = max(heat, mix(heat, 1.0, smoothstep(0.8, 1.0, lum)*uLights));
+  fragColor = vec4(heat, lum, 0.0, 1.0);
+}`;
+
+  // redução com média de caixa: n×n amostras bilineares cobrindo a área de
+  // origem de cada pixel de destino (uScale = px de origem por px de destino)
+  const FRAG_DOWN = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uTex;
+uniform vec2 uSrcTexel;
+uniform vec2 uScale;
+void main(){
+  int n = int(clamp(ceil(max(uScale.x, uScale.y)*0.5), 1.0, 12.0));
+  vec4 sum = vec4(0.0);
+  for(int j=0; j<12; j++){
+    if(j >= n) break;
+    for(int i=0; i<12; i++){
+      if(i >= n) break;
+      vec2 o = (vec2(float(i), float(j)) + 0.5)/float(n) - 0.5;
+      sum += texture(uTex, vUv + o*uScale*uSrcTexel);
+    }
+  }
+  fragColor = sum/float(n*n);
+}`;
+
+  // blur gaussiano separável (o mesmo do Typexperimental)
+  const FRAG_BLUR = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uTex;
+uniform vec2 uDirection;
+uniform float uRadius;
+void main(){
+  vec4 sum = vec4(0.0);
+  float total = 0.0;
+  const int SAMPLES = 16;
+  for(int i=-SAMPLES; i<=SAMPLES; i++){
+    float t = float(i)/float(SAMPLES);
+    float w = exp(-t*t*2.0);
+    sum += texture(uTex, vUv + uDirection*uRadius*t) * w;
+    total += w;
+  }
+  fragColor = sum/total;
+}`;
+
+  // bloom: reduz (como o FRAG_DOWN) guardando só o excesso acima do limite —
+  // 60% da faixa do calor, ou 72% da luminância da foto nos looks de vídeo
+  // (uLum = 1); depois é borrado bem largo e entra no passe final
+  const FRAG_BLOOM = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uTex;
+uniform vec2 uSrcTexel;
+uniform vec2 uScale;
+uniform float uLo;
+uniform float uHi;
+uniform int uLum;
+void main(){
+  int n = int(clamp(ceil(max(uScale.x, uScale.y)*0.5), 1.0, 12.0));
+  float lim = uLum == 1 ? 0.72 : 0.6;
+  float sum = 0.0;
+  for(int j=0; j<12; j++){
+    if(j >= n) break;
+    for(int i=0; i<12; i++){
+      if(i >= n) break;
+      vec2 o = (vec2(float(i), float(j)) + 0.5)/float(n) - 0.5;
+      vec4 s = texture(uTex, vUv + o*uScale*uSrcTexel);
+      float h = uLum == 1 ? dot(s.rgb, vec3(0.2126, 0.7152, 0.0722)) : (s.r - uLo)/max(uHi - uLo, 1e-4);
+      sum += max(0.0, h - lim)/(1.0 - lim);
+    }
+  }
+  fragColor = vec4(sum/float(n*n), 0.0, 0.0, 1.0);
+}`;
+
+  // looks de vídeo (CCTV, camcorder): a foto suavizada pelo sensor →
+  // nitidez → balanço de branco → exposição/contraste → saturação (com
+  // vermelhos preservados) → pretos lavados → halo → vinheta → listras →
+  // linhas (entrelaçado ou subpixels de LCD) → grão
+  const FRAG_LOOK = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uPhoto;
+uniform sampler2D uSrc;
+uniform sampler2D uSrcBlur;
+uniform sampler2D uBloomTex;
+uniform int uLook;
+uniform float uSat, uTemp, uTint, uExposure, uContrast, uLift, uKeepRed, uSharpen, uLines;
+uniform float uBloom, uGrain, uVignette, uFpn;
+uniform vec2 uGrainCell;
+uniform vec2 uSeed;
+uniform vec2 uSensorPx;
+uniform vec2 uLineCount;
+float hash(vec2 p){
+  uvec2 q = uvec2(ivec2(p) + 8192);
+  q = q*1664525u + 1013904223u;
+  q.x += q.y*1664525u; q.y += q.x*1664525u;
+  q ^= q >> 16u;
+  q.x += q.y*1664525u; q.y += q.x*1664525u;
+  q ^= q >> 16u;
+  return float(q.x ^ q.y) / 4294967295.0;
+}
+void main(){
+  vec3 c = texture(uPhoto, vUv).rgb;
+  if(uSharpen > 0.0) c += uSharpen*1.6*(texture(uSrc, vUv).rgb - texture(uSrcBlur, vUv).rgb);
+  c *= vec3(1.0 + 0.14*uTemp - 0.05*uTint, 1.0 + 0.10*uTint, 1.0 - 0.16*uTemp - 0.05*uTint);
+  c *= exp2(uExposure);
+  c = (c - 0.5)*(1.0 + uContrast) + 0.5;
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  float redness = clamp((c.r - max(c.g, c.b))*3.0, 0.0, 1.0);
+  c = mix(vec3(l), c, mix(uSat, max(uSat, 1.1), redness*uKeepRed));
+  c = uLift + clamp(c, 0.0, 1.0)*(1.0 - uLift);
+  if(uBloom > 0.0) c += texture(uBloomTex, vUv).r*uBloom*vec3(0.92, 0.97, 1.0);
+  vec2 q = vUv - 0.5;
+  c *= 1.0 - uVignette*dot(q,q)*1.6;
+  if(uFpn > 0.0){
+    vec2 sp = floor(vUv*uSensorPx);
+    c += uFpn*0.06*((hash(vec2(sp.x, 7.0)) - 0.5) + 0.5*(hash(vec2(13.0, sp.y)) - 0.5));
+  }
+  if(uLines > 0.0){
+    if(uLook == 1){
+      // entrelaçado: uma linha de vídeo sim, outra não, mais escura
+      c *= 1.0 - uLines*0.35*mod(floor((1.0 - vUv.y)*uLineCount.y), 2.0);
+    } else {
+      // tela LCD: subpixels R, G e B em colunas + um vão fino entre as linhas
+      float sub = mod(floor(vUv.x*uLineCount.x*3.0), 3.0);
+      vec3 m = sub < 0.5 ? vec3(1.0, 0.35, 0.35) : sub < 1.5 ? vec3(0.35, 1.0, 0.35) : vec3(0.35, 0.35, 1.0);
+      float gap = step(0.82, fract((1.0 - vUv.y)*uLineCount.y));
+      c *= mix(vec3(1.0), m*1.3*(1.0 - gap*0.6), uLines*0.6);
+    }
+  }
+  c += (hash(floor(vUv/uGrainCell) + uSeed) - 0.5)*uGrain;
+  fragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+}`;
+
+  // calor suavizado + MSX → equalização → nível/span → bloom → vinheta →
+  // grão → listras → gama → isotermas → paleta → fundo
+  const FRAG_FINAL = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uHeat;
+uniform sampler2D uFull;
+uniform sampler2D uLumBlur;
+uniform sampler2D uCdf;
+uniform sampler2D uLut;
+uniform sampler2D uBloomTex;
+uniform sampler2D uMask;
+uniform sampler2D uSrc;
+uniform float uBloom;
+uniform float uFpn;
+uniform vec2 uSensorPx;
+uniform int uSegMode;
+uniform int uBgMode;
+uniform vec3 uBgColor;
+uniform float uEdge;
+uniform float uMsx;
+uniform float uEq;
+uniform float uLo;
+uniform float uHi;
+uniform float uGamma;
+uniform float uPoster;
+uniform float uGrain;
+uniform vec2 uGrainCell;
+uniform vec2 uSeed;
+uniform float uVignette;
+uniform int uInvert;
+uniform float uCycles;
+uniform float uOffset;
+float hash(vec2 p){
+  uvec2 q = uvec2(ivec2(p) + 8192);
+  q = q*1664525u + 1013904223u;
+  q.x += q.y*1664525u; q.y += q.x*1664525u;
+  q ^= q >> 16u;
+  q.x += q.y*1664525u; q.y += q.x*1664525u;
+  q ^= q >> 16u;
+  return float(q.x ^ q.y) / 4294967295.0;
+}
+${MASK_GLSL}
+void main(){
+  float h = texture(uHeat, vUv).r;
+  if(uMsx > 0.0){
+    h += uMsx*1.5*(texture(uFull, vUv).g - texture(uLumBlur, vUv).g);
+  }
+  if(uEq > 0.0){
+    float x = clamp(h, 0.0, 1.0)*255.0;
+    int i0 = int(floor(x));
+    int i1 = min(i0+1, 255);
+    float e = mix(texelFetch(uCdf, ivec2(i0,0), 0).r, texelFetch(uCdf, ivec2(i1,0), 0).r, fract(x));
+    h = mix(h, e, uEq);
+  }
+  h = (h - uLo)/max(uHi - uLo, 1e-4);
+  // halo: o calor borrado só vale onde é maior que o local, então espalha
+  // em volta das áreas quentes sem saturar o detalhe de dentro delas
+  float glow = 0.0;
+  if(uBloom > 0.0){
+    glow = texture(uBloomTex, vUv).r*uBloom*1.2;
+    h = max(h, glow);
+  }
+  vec2 q = vUv - 0.5;
+  h -= uVignette*dot(q,q)*2.0;
+  h += (hash(floor(vUv/uGrainCell) + uSeed) - 0.5)*uGrain;
+  // padrão fixo do sensor: colunas, linhas e pixels com ganho um pouco diferente
+  if(uFpn > 0.0){
+    vec2 sp = floor(vUv*uSensorPx);
+    h += uFpn*0.1*((hash(vec2(sp.x, 7.0)) - 0.5) + 0.5*(hash(vec2(13.0, sp.y)) - 0.5) + 0.5*(hash(sp + 3.0) - 0.5));
+  }
+  h = clamp(h, 0.0, 1.0);
+  h = pow(h, uGamma);
+  if(uPoster >= 2.0) h = min(floor(h*uPoster), uPoster-1.0)/(uPoster-1.0);
+  float t = uInvert == 1 ? 1.0 - h : h;
+  t = mod(t*uCycles + uOffset, 2.0);
+  if(t > 1.0) t = 2.0 - t;
+  vec3 col = texture(uLut, vec2(t*(1023.0/1024.0) + 0.5/1024.0, 0.5)).rgb;
+  float a = 1.0;
+  // fundo tratado à parte pela máscara da IA; o halo do bloom invade o fundo
+  if(uSegMode > 0 && uBgMode > 0){
+    float w = mix(0.45, 0.03, uEdge);
+    float p = smoothstep(0.5 - w, 0.5 + w, personAmount(texture(uMask, vUv), uSegMode));
+    p = clamp(p + glow, 0.0, 1.0);
+    if(uBgMode == 4) a = p;
+    else {
+      vec3 photo = texture(uSrc, vUv).rgb;
+      vec3 bg = uBgColor;
+      if(uBgMode == 1) bg = photo;
+      if(uBgMode == 2) bg = mix(vec3(0.02, 0.05, 0.16), vec3(0.36, 0.82, 1.0), pow(dot(photo, vec3(0.2126, 0.7152, 0.0722)), 1.15));
+      col = mix(bg, col, p);
+    }
+  }
+  fragColor = vec4(col*a, a);
+}`;
+
+  const heatProg  = makeProgram(FRAG_HEAT);
+  const downProg  = makeProgram(FRAG_DOWN);
+  const blurProg  = makeProgram(FRAG_BLUR);
+  const bloomProg = makeProgram(FRAG_BLOOM);
+  const finalProg = makeProgram(FRAG_FINAL);
+  const lookProg  = makeProgram(FRAG_LOOK);
+
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  const quadBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+  // campo de calor em meia precisão (RG16F) quando dá pra renderizar float:
+  // com 8 bits, paletas de muitas cores (Rainbow) mostram faixas.
+  let FLOAT_OK = !!gl.getExtension('EXT_color_buffer_float');
+
+  function setTexParams(filter){
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  }
+  // rgba = cor da foto (looks de vídeo), em 8 bits; o resto é campo de calor
+  function makeTarget(w, h, rgba){
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    if(FLOAT_OK && !rgba) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG16F, w, h, 0, gl.RG, gl.HALF_FLOAT, null);
+    else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    setTexParams(gl.LINEAR);
+    const fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return { tex, fbo, w, h, filter:gl.LINEAR, ok, rgba:!!rgba };
+  }
+  function freeTarget(t){
+    if(!t) return;
+    gl.deleteTexture(t.tex);
+    gl.deleteFramebuffer(t.fbo);
+  }
+  if(FLOAT_OK){
+    const probe = makeTarget(4, 4);
+    FLOAT_OK = probe.ok;
+    freeTarget(probe);
+  }
+
+  // alvos por nome, recriados só quando o tamanho muda
+  const targets = {};
+  function target(name, w, h, rgba){
+    let t = targets[name];
+    if(!t || t.w !== w || t.h !== h || t.rgba !== !!rgba){
+      freeTarget(t);
+      t = targets[name] = makeTarget(w, h, rgba);
+    }
+    return t;
+  }
+  function freeTargets(){
+    for(const k in targets){ freeTarget(targets[k]); delete targets[k]; }
+  }
+  function setFilter(t, filter){
+    if(t.filter === filter) return;
+    gl.bindTexture(gl.TEXTURE_2D, t.tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+    t.filter = filter;
+  }
+
+  let srcTex = null;
+  // srcT: a foto no mesmo formato dos alvos, pra passar por downsample/blur
+  const srcT = { tex:null, w:1, h:1, filter:gl.LINEAR };
+  // a cada quadro: no mesmo tamanho só reescreve os pixels da textura
+  function uploadSource(canvas){
+    const fresh = !srcTex || srcT.w !== canvas.width || srcT.h !== canvas.height;
+    if(!srcTex) srcTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, srcTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    if(fresh){
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+      setTexParams(gl.LINEAR);
+      srcT.filter = gl.LINEAR;
+    } else gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    srcT.tex = srcTex; srcT.w = canvas.width; srcT.h = canvas.height;
+  }
+
+  // paleta: degradê desenhado num canvas 1024×1 e enviado como textura.
+  // lutData fica guardado pra barra de escala usar as mesmas cores.
+  const lutCanvas = document.createElement('canvas');
+  lutCanvas.width = 1024; lutCanvas.height = 1;
+  const lutCtx = lutCanvas.getContext('2d', { willReadFrequently:true });
+  let lutData = null;
+  const lutTex = gl.createTexture();
+  function sortedStops(){ return [...state.palette.stops].sort((a,b)=>a.pos-b.pos); }
+  function updateLut(){
+    const g = lutCtx.createLinearGradient(0, 0, 1024, 0);
+    sortedStops().forEach(s=>g.addColorStop(Math.min(1, Math.max(0, s.pos/100)), s.color));
+    lutCtx.fillStyle = g;
+    lutCtx.fillRect(0, 0, 1024, 1);
+    lutData = lutCtx.getImageData(0, 0, 1024, 1).data;
+    gl.bindTexture(gl.TEXTURE_2D, lutTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1024, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(lutData.buffer));
+    setTexParams(gl.LINEAR);
+  }
+
+  // curva acumulada do calor (equalização), 256 valores em float
+  const cdfTex = gl.createTexture();
+  function uploadCdf(arr){
+    gl.bindTexture(gl.TEXTURE_2D, cdfTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, 256, 1, 0, gl.RED, gl.FLOAT, arr);
+    setTexParams(gl.NEAREST);
+  }
+  const stats = { samples:null, cdf:new Float32Array(256).map((_,i)=>i/255), lo:0, hi:1 };
+  uploadCdf(stats.cdf);
+
+  // máscara da IA pro recorte atual (ver MASK_GLSL); emptyTex ocupa os
+  // samplers que o shader não lê naquele render
+  const maskTex = gl.createTexture();
+  const emptyTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, emptyTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+  setTexParams(gl.NEAREST);
+  const mask = { ready:false, mode:0 }; // mode: 1 rápida, 2 detalhada
+  function uploadMask(data, w, h){
+    gl.bindTexture(gl.TEXTURE_2D, maskTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    setTexParams(gl.LINEAR);
+  }
+
+  /* ---------------------------------------------------------------------
+     PIPELINE
+  --------------------------------------------------------------------- */
+  let RW = 0, RH = 0; // tamanho de saída atual (preview ou export)
+
+  function setOutputSize(w, h){
+    RW = w; RH = h;
+    glCanvas.width = w; glCanvas.height = h;
+    overlay.width = w; overlay.height = h;
+  }
+  function pass(prog, dst, setup){
+    gl.useProgram(prog.p);
+    if(dst){ gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fbo); gl.viewport(0, 0, dst.w, dst.h); }
+    else { gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, RW, RH); }
+    setup(prog.loc);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+  function bindTex(unit, tex, loc){
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniform1i(loc, unit);
+  }
+  function downsample(src, dst){
+    setFilter(src, gl.LINEAR);
+    pass(downProg, dst, L=>{
+      bindTex(0, src.tex, L.uTex);
+      gl.uniform2f(L.uSrcTexel, 1/src.w, 1/src.h);
+      gl.uniform2f(L.uScale, src.w/dst.w, src.h/dst.h);
+    });
+  }
+  function blur(src, ping, dst, radiusPx){
+    setFilter(src, gl.LINEAR);
+    pass(blurProg, ping, L=>{
+      bindTex(0, src.tex, L.uTex);
+      gl.uniform2f(L.uDirection, 1/src.w, 0);
+      gl.uniform1f(L.uRadius, radiusPx);
+    });
+    pass(blurProg, dst, L=>{
+      bindTex(0, ping.tex, L.uTex);
+      gl.uniform2f(L.uDirection, 0, 1/ping.h);
+      gl.uniform1f(L.uRadius, radiusPx);
+    });
+  }
+
+  function sensorDims(W, H){
+    const long = Math.max(W, H);
+    const sLong = state.sensor.res ? Math.min(long, state.sensor.res) : long;
+    return { on: sLong < long, w: Math.max(1, Math.round(W*sLong/long)), h: Math.max(1, Math.round(H*sLong/long)) };
+  }
+
+  // sensor: reduz pra resolução do sensor. Como o número de px do sensor é
+  // absoluto, preview e export passam pelo mesmo buffer. Difusão: raio em
+  // fração do lado maior (máx. 4%); sem sensor, um raio grande é borrado
+  // numa cópia reduzida (o resultado é suave de qualquer jeito) pra o blur
+  // de 33 amostras não ficar esparso. rgba = cor da foto (looks de vídeo).
+  function sensorAndDiffusion(src, sd, W, H, rgba){
+    const long = Math.max(W, H), pre = rgba ? 'p' : '';
+    let cur = src;
+    if(sd.on){
+      const s = target(pre + 'sensor', sd.w, sd.h, rgba);
+      downsample(src, s);
+      cur = s;
+    }
+    const rUV = state.sensor.diffusion/100 * 0.04;
+    if(rUV > 0){
+      const MAX_PX = 20;
+      if(!sd.on && rUV*long > MAX_PX){
+        const f = MAX_PX/(rUV*long);
+        const b = target(pre + 'blurSrc', Math.max(1, Math.round(W*f)), Math.max(1, Math.round(H*f)), rgba);
+        downsample(cur, b);
+        cur = b;
+      }
+      const ping = target(pre + 'ping', cur.w, cur.h, rgba), pong = target(pre + 'pong', cur.w, cur.h, rgba);
+      blur(cur, ping, pong, rUV*Math.max(cur.w, cur.h));
+      cur = pong;
+    }
+    return cur;
+  }
+  // bloom numa cópia de ≤200 px, raio de 7% do lado maior
+  function bloomPass(cur, lo, hi, lum){
+    const f = Math.min(1, 200/Math.max(cur.w, cur.h));
+    const bw = Math.max(1, Math.round(cur.w*f)), bh = Math.max(1, Math.round(cur.h*f));
+    const a = target('bloomA', bw, bh);
+    setFilter(cur, gl.LINEAR);
+    pass(bloomProg, a, L=>{
+      bindTex(0, cur.tex, L.uTex);
+      gl.uniform2f(L.uSrcTexel, 1/cur.w, 1/cur.h);
+      gl.uniform2f(L.uScale, cur.w/bw, cur.h/bh);
+      gl.uniform1f(L.uLo, lo);
+      gl.uniform1f(L.uHi, hi);
+      gl.uniform1i(L.uLum, lum ? 1 : 0);
+    });
+    const out = target('bloomC', bw, bh);
+    blur(a, target('bloomB', bw, bh), out, 0.07*Math.max(bw, bh));
+    return out;
+  }
+
+  // grão animado: um deslocamento novo do ruído a cada quadro (as listras
+  // do sensor ficam paradas, como o padrão fixo de verdade)
+  const grainSeed = [0, 0];
+  // skipStats = não lê o calor de volta neste quadro (a leitura trava a GPU,
+  // então só acontece a cada poucos quadros) e segue com a faixa suavizada
+  function renderAll(skipStats){
+    if(state.look !== 'thermal') return renderLook();
+    const W = RW, H = RH, long = Math.max(W, H);
+
+    // 1. calor na resolução de saída
+    const full = target('full', W, H);
+    const segMode = mask.ready ? mask.mode : 0;
+    const sg = state.seg;
+    pass(heatProg, full, L=>{
+      bindTex(0, srcTex, L.uSrc);
+      bindTex(1, segMode ? maskTex : emptyTex, L.uMask);
+      gl.uniform1f(L.uRed, state.src.red/100);
+      gl.uniform1f(L.uSkin, state.src.skin/100);
+      gl.uniform1f(L.uLights, state.src.lights/100);
+      gl.uniform1i(L.uInvert, state.src.invert ? 1 : 0);
+      gl.uniform1i(L.uSegMode, segMode);
+      gl.uniform1f(L.uTBg, cToHeat(sg.tBg));
+      gl.uniform1f(L.uTPerson, cToHeat(sg.tPerson));
+      gl.uniform1f(L.uTHair, cToHeat(sg.tHair));
+      gl.uniform1f(L.uTBody, cToHeat(sg.tBody));
+      gl.uniform1f(L.uTFace, cToHeat(sg.tFace));
+      gl.uniform1f(L.uTCloth, cToHeat(sg.tCloth));
+      gl.uniform1f(L.uPhoto, sg.photo/100);
+    });
+
+    // 2–3. sensor + difusão
+    const sd = sensorDims(W, H);
+    const cur = sensorAndDiffusion(full, sd, W, H, false);
+
+    // 4. MSX: luminância borrada de leve, pro passe final tirar o "alto" dela
+    const msx = state.sensor.msx/100;
+    let lumBlur = full;
+    if(msx > 0){
+      lumBlur = target('msxBlur', W, H);
+      blur(full, target('msxPing', W, H), lumBlur, 0.004*long);
+    }
+
+    // 5. estatísticas pra faixa automática e equalização
+    if(!skipStats) computeStats(cur);
+    smoothRange();
+    const [lo, hi] = currentLoHi();
+
+    // 6. bloom
+    const bloomAmt = state.sensor.bloom/100;
+    const bloomT = bloomAmt > 0 ? bloomPass(cur, lo, hi, false) : null;
+
+    // 7. passe final na tela
+    setFilter(cur, state.sensor.pixel && sd.on ? gl.NEAREST : gl.LINEAR);
+    setFilter(full, gl.LINEAR);
+    const cell = state.noise.size/PREVIEW_LONG;
+    // listras: uma por pixel do sensor, ou por pixel do preview sem sensor
+    const fpnW = sd.on ? sd.w : PREVIEW_LONG*W/long, fpnH = sd.on ? sd.h : PREVIEW_LONG*H/long;
+    const bgRgb = hexToRgb(sg.bgColor);
+    pass(finalProg, null, L=>{
+      bindTex(0, cur.tex, L.uHeat);
+      bindTex(1, full.tex, L.uFull);
+      bindTex(2, lumBlur.tex, L.uLumBlur);
+      bindTex(3, cdfTex, L.uCdf);
+      bindTex(4, lutTex, L.uLut);
+      bindTex(5, bloomT ? bloomT.tex : emptyTex, L.uBloomTex);
+      bindTex(6, segMode ? maskTex : emptyTex, L.uMask);
+      bindTex(7, srcTex, L.uSrc);
+      gl.uniform1f(L.uBloom, bloomAmt);
+      gl.uniform1f(L.uFpn, state.noise.fpn/100);
+      gl.uniform2f(L.uSensorPx, fpnW, fpnH);
+      gl.uniform1i(L.uSegMode, segMode);
+      gl.uniform1i(L.uBgMode, sg.bg);
+      gl.uniform3f(L.uBgColor, bgRgb[0], bgRgb[1], bgRgb[2]);
+      gl.uniform1f(L.uEdge, sg.edge/100);
+      gl.uniform1f(L.uMsx, msx);
+      gl.uniform1f(L.uEq, state.range.eq/100);
+      gl.uniform1f(L.uLo, lo);
+      gl.uniform1f(L.uHi, hi);
+      gl.uniform1f(L.uGamma, state.range.gamma);
+      gl.uniform1f(L.uPoster, state.range.poster);
+      gl.uniform1f(L.uGrain, state.noise.grain/100*0.35);
+      gl.uniform2f(L.uGrainCell, cell*long/W, cell*long/H);
+      gl.uniform2f(L.uSeed, grainSeed[0], grainSeed[1]);
+      gl.uniform1f(L.uVignette, state.noise.vignette/100);
+      gl.uniform1i(L.uInvert, state.palette.invert ? 1 : 0);
+      gl.uniform1f(L.uCycles, state.palette.cycles);
+      gl.uniform1f(L.uOffset, state.palette.offset/100);
+    });
+    return sd;
+  }
+
+  // looks de vídeo: a mesma cadeia de sensor/difusão/bloom, só que na cor
+  // da foto, e o FRAG_LOOK no lugar da paleta
+  function renderLook(){
+    const W = RW, H = RH, long = Math.max(W, H), g = state.grade;
+    const sd = sensorDims(W, H);
+    const cur = sensorAndDiffusion(srcT, sd, W, H, true);
+    const sharpen = g.sharpen/100;
+    let srcBlur = srcT;
+    if(sharpen > 0){
+      srcBlur = target('pmsxBlur', W, H, true);
+      blur(srcT, target('pmsxPing', W, H, true), srcBlur, 0.003*long);
+    }
+    const bloomAmt = state.sensor.bloom/100;
+    const bloomT = bloomAmt > 0 ? bloomPass(cur, 0, 1, true) : null;
+    setFilter(srcT, gl.LINEAR);
+    setFilter(cur, state.sensor.pixel && sd.on ? gl.NEAREST : gl.LINEAR);
+    const cell = state.noise.size/PREVIEW_LONG;
+    const fpnW = sd.on ? sd.w : PREVIEW_LONG*W/long, fpnH = sd.on ? sd.h : PREVIEW_LONG*H/long;
+    // linhas contadas no lado maior: 480 de vídeo (cctv), 300 px de LCD (camcorder)
+    const lines = state.look === 'cctv' ? 480 : 300;
+    pass(lookProg, null, L=>{
+      bindTex(0, cur.tex, L.uPhoto);
+      bindTex(1, srcT.tex, L.uSrc);
+      bindTex(2, srcBlur.tex, L.uSrcBlur);
+      bindTex(3, bloomT ? bloomT.tex : emptyTex, L.uBloomTex);
+      gl.uniform1i(L.uLook, state.look === 'cctv' ? 1 : 2);
+      gl.uniform1f(L.uSat, g.sat/100);
+      gl.uniform1f(L.uTemp, g.temp/100);
+      gl.uniform1f(L.uTint, g.tint/100);
+      gl.uniform1f(L.uExposure, g.exposure/100);
+      gl.uniform1f(L.uContrast, g.contrast/100);
+      gl.uniform1f(L.uLift, g.lift/100);
+      gl.uniform1f(L.uKeepRed, g.keepRed/100);
+      gl.uniform1f(L.uSharpen, sharpen);
+      gl.uniform1f(L.uLines, g.lines/100);
+      gl.uniform1f(L.uBloom, bloomAmt);
+      gl.uniform1f(L.uGrain, state.noise.grain/100*0.25);
+      gl.uniform2f(L.uGrainCell, cell*long/W, cell*long/H);
+      gl.uniform2f(L.uSeed, grainSeed[0], grainSeed[1]);
+      gl.uniform1f(L.uVignette, state.noise.vignette/100);
+      gl.uniform1f(L.uFpn, state.noise.fpn/100);
+      gl.uniform2f(L.uSensorPx, fpnW, fpnH);
+      gl.uniform2f(L.uLineCount, lines*W/long, lines*H/long);
+    });
+    return sd;
+  }
+
+  function currentLoHi(){
+    if(state.range.auto) return [stats.lo, stats.hi];
+    const l = state.range.level/100, s = state.range.span/100;
+    return [l - s/2, l + s/2];
+  }
+
+  // lê uma cópia pequena (≤128 px) do calor suavizado
+  function computeStats(src){
+    const f = Math.min(1, 128/Math.max(src.w, src.h));
+    const st = target('stats', Math.max(1, Math.round(src.w*f)), Math.max(1, Math.round(src.h*f)));
+    downsample(src, st);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, st.fbo);
+    const n = st.w*st.h, vals = new Float32Array(n);
+    if(FLOAT_OK){
+      const buf = new Float32Array(n*4);
+      gl.readPixels(0, 0, st.w, st.h, gl.RGBA, gl.FLOAT, buf);
+      for(let i=0; i<n; i++) vals[i] = buf[i*4];
+    } else {
+      const buf = new Uint8Array(n*4);
+      gl.readPixels(0, 0, st.w, st.h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+      for(let i=0; i<n; i++) vals[i] = buf[i*4]/255;
+    }
+    stats.samples = vals;
+    stats.sw = st.w; stats.sh = st.h;
+    updateRangeFromStats();
+  }
+
+  const BINS = 1024;
+  const toBin = x => Math.min(BINS-1, Math.max(0, Math.floor(x*BINS)));
+  function cdfAt(x){
+    const p = Math.min(1, Math.max(0, x))*255, i = Math.floor(p), j = Math.min(255, i+1);
+    return stats.cdf[i] + (stats.cdf[j]-stats.cdf[i])*(p-i);
+  }
+  function percentile(hist, total, q){
+    let acc = 0;
+    for(let i=0; i<BINS; i++){ acc += hist[i]; if(acc >= q*total) return (i+0.5)/BINS; }
+    return 1;
+  }
+  function updateRangeFromStats(){
+    const v = stats.samples;
+    if(!v || !v.length) return;
+    const hist = new Uint32Array(BINS);
+    for(let i=0; i<v.length; i++) hist[toBin(v[i])]++;
+    let acc = 0;
+    const cum = new Float32Array(BINS);
+    for(let i=0; i<BINS; i++){ acc += hist[i]; cum[i] = acc/v.length; }
+    // a curva da equalização também muda devagar de uma leitura pra outra
+    const k = stats.seeded ? 0.35 : 1;
+    for(let i=0; i<256; i++) stats.cdf[i] += (cum[Math.round(i/255*(BINS-1))] - stats.cdf[i])*k;
+    uploadCdf(stats.cdf);
+    // faixa automática: percentis 0,5% e 99,5% já com a equalização aplicada
+    const eq = state.range.eq/100;
+    const h2 = new Uint32Array(BINS);
+    for(let i=0; i<v.length; i++){ const x = v[i]; h2[toBin(x + (cdfAt(x)-x)*eq)]++; }
+    let lo = percentile(h2, v.length, 0.005), hi = percentile(h2, v.length, 0.995);
+    if(hi - lo < 0.02){ const m = (lo+hi)/2; lo = m - 0.01; hi = m + 0.01; }
+    // alvo da faixa; smoothRange anda até ele aos poucos (sem piscar)
+    stats.tlo = lo; stats.thi = hi;
+    if(!stats.seeded){ stats.lo = lo; stats.hi = hi; stats.seeded = true; }
+    if(state.range.auto) syncRangeSliders();
+  }
+  function smoothRange(){
+    if(!stats.seeded) return;
+    stats.lo += (stats.tlo - stats.lo)*0.12;
+    stats.hi += (stats.thi - stats.hi)*0.12;
+  }
+
+  /* ---------------------------------------------------------------------
+     BARRA DE ESCALA (Canvas2D por cima do WebGL; entra no export)
+  --------------------------------------------------------------------- */
+  // cor da paleta na posição p (0 = mín., 1 = máx.) da escala, com o mesmo
+  // mapeamento do shader depois do nível/span
+  function scaleColorAt(p){
+    let h = Math.pow(p, state.range.gamma);
+    const n = state.range.poster;
+    if(n >= 2) h = Math.min(Math.floor(h*n), n-1)/(n-1);
+    let t = state.palette.invert ? 1-h : h;
+    t = (t*state.palette.cycles + state.palette.offset/100) % 2;
+    if(t > 1) t = 2 - t;
+    const i = Math.round(t*1023)*4;
+    return `rgb(${lutData[i]},${lutData[i+1]},${lutData[i+2]})`;
+  }
+  function convertTemp(c){
+    if(state.scale.unit === 'F') return c*9/5 + 32;
+    if(state.scale.unit === 'K') return c + 273.15;
+    return c;
+  }
+  function drawScale(ctx, w, h, clear){
+    if(clear) ctx.clearRect(0, 0, w, h);
+    if(!state.scale.show || !lutData) return;
+    const long = Math.max(w, h);
+    const m = long*0.045, bw = Math.max(4, long*0.016), fs = Math.max(9, long*0.021);
+    const light = state.scale.text === 'light';
+    const fg = light ? '#ffffff' : '#111111';
+    const sh = light ? 'rgba(0,0,0,.65)' : 'rgba(255,255,255,.65)';
+    const unit = state.scale.unit === 'K' ? 'K' : '°' + state.scale.unit;
+    const vertical = state.scale.pos !== 'bottom';
+    const tmin = state.scale.tmin, tmax = state.scale.tmax;
+
+    let bx, by, bl;
+    if(vertical){
+      by = m + fs*1.8; bl = h - m - by;
+      bx = state.scale.pos === 'right' ? w - m - bw : m;
+    } else {
+      bl = Math.min(w*0.6, w - m*2 - fs*4); bx = (w - bl)/2; by = h - m - bw;
+    }
+
+    ctx.save();
+    const steps = Math.max(2, Math.ceil(bl));
+    for(let i=0; i<steps; i++){
+      const p = i/(steps-1);
+      ctx.fillStyle = scaleColorAt(vertical ? 1-p : p);
+      if(vertical) ctx.fillRect(bx, by + p*(bl-1), bw, 1.5);
+      else ctx.fillRect(bx + p*(bl-1), by, 1.5, bw);
+    }
+    ctx.lineWidth = Math.max(1, long*0.0012);
+    ctx.strokeStyle = fg;
+    ctx.shadowColor = sh; ctx.shadowBlur = fs*0.3;
+    ctx.strokeRect(bx, by, vertical ? bw : bl, vertical ? bl : bw);
+
+    ctx.fillStyle = fg;
+    ctx.font = `500 ${fs}px "Geist Mono", ui-monospace, monospace`;
+    const TICKS = 5, tick = fs*0.35, gap = fs*0.55;
+    for(let k=0; k<TICKS; k++){
+      const p = k/(TICKS-1);
+      const label = convertTemp(tmin + p*(tmax - tmin)).toFixed(1);
+      ctx.beginPath();
+      if(vertical){
+        const y = by + (1-p)*bl;
+        const right = state.scale.pos === 'right';
+        const x0 = right ? bx : bx + bw;
+        ctx.moveTo(x0, y); ctx.lineTo(right ? x0 - tick : x0 + tick, y); ctx.stroke();
+        ctx.textAlign = right ? 'right' : 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, right ? x0 - tick - gap*0.6 : x0 + tick + gap*0.6, y);
+      } else {
+        const x = bx + p*bl;
+        ctx.moveTo(x, by); ctx.lineTo(x, by - tick); ctx.stroke();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(label, x, by - tick - gap*0.4);
+      }
+    }
+    // unidade: acima da barra vertical, à direita da horizontal
+    if(vertical){
+      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      ctx.fillText(unit, bx + bw/2, by - gap);
+    } else {
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText(unit, bx + bl + gap, by + bw/2);
+    }
+    ctx.restore();
+  }
+
+  /* ---------------------------------------------------------------------
+     OSD (interface do aparelho, Canvas2D na mesma camada da escala)
+     Cada template desenha com medidas em u = 1% do lado maior × tamanho.
+  --------------------------------------------------------------------- */
+  // k compensa o tamanho aparente de cada fonte no mesmo corpo
+  const OSD_FONTS = {
+    pixel: { css:'"VT323", monospace', k:1.3 },
+    mono:  { css:'"Space Mono", ui-monospace, monospace', k:0.9 },
+    tech:  { css:'"Michroma", sans-serif', k:0.72 },
+  };
+  const pad2 = n => String(n).padStart(2, '0');
+  const fmtDate = d=>`${pad2(d.getDate())}/${pad2(d.getMonth()+1)}/${d.getFullYear()}`;
+  const fmtClock = d=>`${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+  const NOW = new Date();
+  const TODAY = fmtDate(NOW);
+  const CLOCK = fmtClock(NOW);
+  // campos: [chave, rótulo, padrão, tipo]; seg = usa as caixas da IA;
+  // tipo clock = some quando o relógio ao vivo está ligado
+  const OSD_TEMPLATES = {
+    ircam: { font:'pixel', color:'#7dff9a', seg:true, fields:[
+      ['ircamTitle', 'linha 1', 'IR-CAM ACTIVE'],
+      ['ircamTarget', 'alvo', 'TARGET: HUMAN'],
+      ['ircamStatus', 'status', 'SCANNING...'],
+    ]},
+    scan: { font:'tech', color:'#3dff6a', seg:true, fields:[
+      ['scanTitle', 'título', 'THERMAL SCAN'],
+      ['scanCam', 'câmera', 'CAM I'],
+      ['scanPlace', 'local', 'AIRPORT TERMINAL 83'],
+      ['scanName', 'nome', 'SUBJECT 01'],
+      ['scanFooter', 'rodapé', `TERMINAL 83 • ${TODAY} • ${CLOCK.slice(0,5)}`],
+    ]},
+    surv: { font:'pixel', color:'#3dff6a', seg:true, fields:[
+      ['survCam', 'câmera', 'CAM#3'],
+      ['survName', 'nome', 'SUBJECT A'],
+      ['survMatch', 'match', '95% MATCH'],
+      ['survCloth', 'roupa', 'WHITE TEE'],
+      ['survCard', 'cartão', 'ID: 0042-LN\nSTATUS: TRACKING', 'multi'],
+      ['survStatus', 'barra de status', 'Biometric identification, Behavior analysis, Style information'],
+    ]},
+    cctv: { font:'pixel', color:'#ffffff', seg:false, fields:[
+      ['cctvCam', 'câmera', 'CAM 07'],
+      ['cctvDate', 'data', TODAY, 'clock'],
+      ['cctvTime', 'hora', CLOCK, 'clock'],
+    ]},
+    camcorder: { font:'pixel', color:'#ffffff', seg:false, fields:[
+      ['camBattery', 'bateria', '205min'],
+      ['camMode', 'modo', 'SP'],
+      ['camTime', 'timecode', '0:02:17'],
+    ]},
+  };
+  for(const tpl of Object.values(OSD_TEMPLATES))
+    for(const [key, , def] of tpl.fields) if(!(key in state.osd.text)) state.osd.text[key] = def;
+
+  function osdFont(px){
+    const f = OSD_FONTS[state.osd.font];
+    return `${Math.max(6, px*f.k)}px ${f.css}`;
+  }
+  function osdText(o, str, x, y, px, align, base, color){
+    const c = o.ctx;
+    c.font = osdFont(px);
+    c.textAlign = align || 'left';
+    c.textBaseline = base || 'alphabetic';
+    if(color) c.fillStyle = color;
+    c.fillText(str, x, y);
+    return c.measureText(str).width;
+  }
+  // texto numa caixa sólida; align = lado da caixa preso em x
+  function osdTag(o, str, x, y, px, bg, fg, align){
+    const c = o.ctx;
+    c.font = osdFont(px);
+    const padX = px*0.3, bw = c.measureText(str).width + padX*2, bh = px*1.15;
+    const bx = align === 'right' ? x - bw : x;
+    c.fillStyle = bg; c.fillRect(bx, y, bw, bh);
+    c.fillStyle = fg; c.textAlign = 'left'; c.textBaseline = 'middle';
+    c.fillText(str, bx + padX, y + bh*0.54);
+    return { x:bx, y, w:bw, h:bh };
+  }
+  function osdCorners(c, x0, y0, x1, y1, L){
+    c.beginPath();
+    c.moveTo(x0, y0 + L); c.lineTo(x0, y0); c.lineTo(x0 + L, y0);
+    c.moveTo(x1 - L, y0); c.lineTo(x1, y0); c.lineTo(x1, y0 + L);
+    c.moveTo(x1, y1 - L); c.lineTo(x1, y1); c.lineTo(x1 - L, y1);
+    c.moveTo(x0 + L, y1); c.lineTo(x0, y1); c.lineTo(x0, y1 - L);
+    c.stroke();
+  }
+  function osdCross(c, cx, cy, r){
+    c.beginPath();
+    c.moveTo(cx - r, cy); c.lineTo(cx - r*0.3, cy); c.moveTo(cx + r*0.3, cy); c.lineTo(cx + r, cy);
+    c.moveTo(cx, cy - r); c.lineTo(cx, cy - r*0.3); c.moveTo(cx, cy + r*0.3); c.lineTo(cx, cy + r);
+    c.stroke();
+  }
+  const boxPx = (o, b)=>({ x0:b.x0*o.w, y0:b.y0*o.h, x1:b.x1*o.w, y1:b.y1*o.h });
+  const unitLabel = ()=>state.scale.unit === 'K' ? 'K' : '°' + state.scale.unit;
+  const tempStr = (c, digits)=>convertTemp(c).toFixed(digits) + unitLabel();
+  // texto escuro em cores claras, branco em cores escuras
+  const inkOn = hex=>{ const [r,g,b] = hexToRgb(hex); return 0.2126*r + 0.7152*g + 0.0722*b > 0.5 ? '#0a0a0a' : '#ffffff'; };
+  // "SUBJECT 01" → "SUBJECT 02"… pras outras pessoas
+  const nthName = (name, i)=>i === 0 ? name
+    : /\d+$/.test(name) ? name.replace(/\d+$/, d=>String(+d + i).padStart(d.length, '0')) : `${name} ${i+1}`;
+
+  const OSD_DRAW = {
+    // ref: câmera IR com mira na pessoa, fósforo verde
+    ircam(o){
+      const c = o.ctx, u = o.u, t = state.osd.text;
+      const m = u*3.5, fs = u*2.6, lw = Math.max(1.5, u*0.32);
+      c.strokeStyle = o.col; c.fillStyle = o.col; c.lineWidth = lw;
+      c.shadowColor = o.col; c.shadowBlur = u*0.7;
+      osdCorners(c, m, m, o.w - m, o.h - m, u*6);
+      const ix = m + u*1.4, iy = m + u*1.2, rx = o.w - m - u*1.4;
+      osdText(o, t.ircamTitle, ix, iy, fs, 'left', 'top');
+      const ref = (o.det.persons.length && boxTempC(o.det.persons[0])) || o.temps.max;
+      const letter = state.scale.unit === 'K' ? 'K' : state.scale.unit;
+      osdText(o, `TEMP REF: ${convertTemp(ref).toFixed(1)}${letter}`, rx, iy, fs, 'right', 'top');
+      osdText(o, `DELTA: ${(convertTemp(ref) - convertTemp(o.temps.min)).toFixed(1)}`, rx, iy + fs*1.05, fs, 'right', 'top');
+      osdText(o, t.ircamTarget, ix, o.h - m - u*1.2, fs*1.45, 'left', 'bottom');
+      // "SCANNING..." com os pontinhos andando
+      const status = o.live ? String(t.ircamStatus).replace(/\.{3}$/, '.'.repeat(Math.floor(o.t*2.5) % 4).padEnd(3, ' ')) : t.ircamStatus;
+      osdText(o, status, rx, o.h - m - u*1.2, fs*0.95, 'right', 'bottom');
+      c.lineWidth = lw*0.8;
+      o.det.persons.slice(0, 3).forEach(b=>{
+        const p = boxPx(o, b);
+        c.strokeRect(p.x0, p.y0, p.x1 - p.x0, p.y1 - p.y0);
+        osdCross(c, (p.x0 + p.x1)/2, (p.y0 + p.y1)/2, u*2.2);
+      });
+    },
+
+    // ref: pôster "thermal scan" — cabeçalho/rodapé, caixa rotulada por pessoa
+    scan(o){
+      const c = o.ctx, u = o.u, t = state.osd.text, W = o.w, H = o.h;
+      const fs = u*2.1, white = '#f2f2f2', red = '#ff4040', lw = Math.max(1, u*0.14);
+      const hy = u*4.2, fy = H - u*4.2;
+      c.fillStyle = white;
+      osdText(o, t.scanTitle, u*6, hy, fs, 'left', 'middle');
+      osdText(o, t.scanCam, W*0.43, hy, fs, 'center', 'middle');
+      osdText(o, unitLabel(), W*0.56, hy, fs, 'center', 'middle');
+      osdText(o, t.scanPlace, W - u*6, hy, fs, 'right', 'middle');
+      osdText(o, t.scanFooter, W/2, fy, fs, 'center', 'middle');
+      c.strokeStyle = white; c.lineWidth = lw;
+      [[u*2.6, hy], [W - u*2.6, hy], [u*2.6, fy], [W - u*2.6, fy]].forEach(([x, y])=>osdCross(c, x, y, u));
+      const labels = [];
+      o.det.persons.slice(0, 4).forEach((b, i)=>{
+        const p = boxPx(o, b), pad = u*1.2;
+        const x0 = p.x0 - pad, y0 = p.y0 - pad, x1 = p.x1 + pad, y1 = p.y1 + pad;
+        c.strokeStyle = 'rgba(255,255,255,.6)'; c.lineWidth = lw;
+        c.strokeRect(x0, y0, x1 - x0, y1 - y0);
+        c.fillStyle = white;
+        [[x0, y0], [x1, y0], [x0, y1], [x1, y1]].forEach(([x, y])=>c.fillRect(x - u*0.35, y - u*0.35, u*0.7, u*0.7));
+        // rótulo com nome, status e temperatura
+        // rótulo acima da caixa; se bater no cabeçalho, entra nela
+        const bh = fs*1.45, bw = x1 - x0;
+        let by = y0 - bh - u*0.8;
+        if(by < hy + fs) by = y0 + u*0.8;
+        c.fillStyle = 'rgba(232,232,232,.94)'; c.fillRect(x0, by, bw, bh);
+        c.save(); c.beginPath(); c.rect(x0, by, Math.max(0, bw - fs*1.4), bh); c.clip();
+        osdText(o, nthName(t.scanName, i), x0 + fs*0.4, by + bh*0.54, fs*0.9, 'left', 'middle', '#1a1a1a');
+        c.restore();
+        c.fillStyle = i % 2 ? red : '#2bd94a';
+        c.beginPath(); c.arc(x1 - fs*0.7, by + bh/2, fs*0.32, 0, Math.PI*2); c.fill();
+        const tc = boxTempC(b);
+        if(tc != null){
+          // a seta vai desenhada (nem toda fonte tem o ▲)
+          const ty = by + bh + fs*0.95, tw = osdText(o, tempStr(tc, 2), x1 - u*0.3, ty, fs, 'right', 'middle', red);
+          const ax = x1 - u*0.3 - tw - fs*0.55;
+          c.beginPath(); c.moveTo(ax, ty - fs*0.32); c.lineTo(ax - fs*0.3, ty + fs*0.22); c.lineTo(ax + fs*0.3, ty + fs*0.22); c.closePath(); c.fill();
+        }
+        labels.push({ x0, x1, y:by + bh/2 });
+        // cantoneiras na cabeça: rosto detectado, ou o topo da caixa
+        const face = o.det.faces.find(f=>insideBox(f, b));
+        const hb = face ? boxPx(o, face) : { x0:(p.x0 + p.x1)/2 - (p.x1 - p.x0)*0.18, x1:(p.x0 + p.x1)/2 + (p.x1 - p.x0)*0.18, y0:p.y0, y1:p.y0 + (p.y1 - p.y0)*0.18 };
+        c.strokeStyle = o.col; c.lineWidth = lw*1.6;
+        osdCorners(c, hb.x0 - u*0.6, hb.y0 - u*0.6, hb.x1 + u*0.6, hb.y1 + u*0.6, u*1.4);
+        // mira no centro e triângulo embaixo
+        c.strokeStyle = white; c.lineWidth = lw*1.3;
+        const cx = (p.x0 + p.x1)/2, cy = (p.y0 + p.y1)/2;
+        c.beginPath(); c.arc(cx, cy, u*0.9, 0, Math.PI*2); c.stroke();
+        osdCross(c, cx, cy, u*1.9);
+        c.fillStyle = white;
+        c.beginPath(); c.moveTo(cx, y1 + u*1.6); c.lineTo(cx - u, y1 + u*3.2); c.lineTo(cx + u, y1 + u*3.2); c.closePath(); c.fill();
+      });
+      // pontilhado ligando os rótulos, da esquerda pra direita
+      labels.sort((a, b)=>a.x0 - b.x0);
+      c.strokeStyle = o.col; c.lineWidth = lw*1.2; c.setLineDash([u*0.5, u*0.5]);
+      for(let i=0; i<labels.length - 1; i++){
+        const a = labels[i], b = labels[i+1], mx = (a.x1 + b.x0)/2;
+        c.beginPath(); c.moveTo(a.x1, a.y); c.lineTo(mx, a.y); c.lineTo(mx, b.y); c.lineTo(b.x0, b.y); c.stroke();
+      }
+      c.setLineDash([]);
+    },
+
+    // ref: vigilância com IA — caixas por pessoa/rosto/roupa, recorte do rosto, cartão, status
+    surv(o){
+      const c = o.ctx, u = o.u, t = state.osd.text, W = o.w, H = o.h;
+      const fs = u*1.9, lw = Math.max(1.2, u*0.22), barH = fs*1.8;
+      const cols = [o.col, '#3b5bff', '#ff4fd8', '#ffd23b'];
+      c.strokeStyle = 'rgba(255,255,255,.75)'; c.lineWidth = lw;
+      osdCorners(c, u*2.5, u*2.5, W - u*2.5, H - barH - u*2.5, u*3.5);
+      const cam = osdTag(o, nthName(t.survCam, o.idx), u*4, u*4, fs*1.2, 'rgba(0,0,0,.45)', '#fff', 'left');
+      c.strokeStyle = '#fff'; c.strokeRect(cam.x, cam.y, cam.w, cam.h);
+      c.fillStyle = '#ff3b30';
+      // a bolinha do REC pisca uma vez por segundo
+      if(!o.live || o.t % 1 < 0.6){ c.beginPath(); c.arc(W - u*9, u*4 + fs*0.6, fs*0.3, 0, Math.PI*2); c.fill(); }
+      osdText(o, 'REC', W - u*8.2, u*4 + fs*0.62, fs, 'left', 'middle', '#fff');
+
+      const persons = o.det.persons.slice(0, 4);
+      const colorOf = b=>cols[Math.max(0, persons.findIndex(pp=>insideBox(b, pp))) % cols.length];
+      persons.forEach((b, i)=>{
+        const p = boxPx(o, b), col = cols[i % cols.length];
+        c.strokeStyle = col; c.lineWidth = lw;
+        c.strokeRect(p.x0, p.y0, p.x1 - p.x0, p.y1 - p.y0);
+        // rótulo acima da caixa; sem espaço (pessoa no topo), entra nela
+        const above = p.y0 - fs*2.3 > u*1.5;
+        const tag = osdTag(o, i === 0 ? t.survName : `ID ${pad2(i+1)}`, p.x0, above ? p.y0 - fs*1.15 : p.y0 + lw, fs, col, inkOn(col), 'left');
+        const match = i === 0 ? t.survMatch : `${Math.max(40, 92 - i*9)}% MATCH`;
+        if(above) osdText(o, match, p.x0, tag.y - fs*0.3, fs*0.8, 'left', 'bottom', '#fff');
+        else osdText(o, match, p.x0 + u*0.3, tag.y + tag.h + fs*0.2, fs*0.8, 'left', 'top', '#fff');
+      });
+      c.lineWidth = lw; c.setLineDash([u*0.45, u*0.35]);
+      o.det.faces.forEach(f=>{ const p = boxPx(o, f); c.strokeStyle = colorOf(f); c.strokeRect(p.x0, p.y0, p.x1 - p.x0, p.y1 - p.y0); });
+      c.setLineDash([]);
+      o.det.clothes.forEach((cb, k)=>{
+        const p = boxPx(o, cb), col = colorOf(cb), pad = u*0.6;
+        c.strokeStyle = col; c.lineWidth = lw*0.9;
+        c.strokeRect(p.x0 + pad, p.y0 + pad, p.x1 - p.x0 - pad*2, p.y1 - p.y0 - pad*2);
+        osdTag(o, k === 0 ? t.survCloth : `ITEM ${pad2(k+1)}`, p.x0 + pad, p.y1 - pad - fs*1.05, fs*0.85, col, inkOn(col), 'left');
+      });
+      // recorte do rosto principal, ligado à caixa, com o cartão embaixo
+      const face = o.det.faces[0];
+      if(face && o.det.thumb){
+        const fp = boxPx(o, face), cc = '#3b5bff';
+        const tw = Math.min(W*0.27, H*0.3), th = tw*1.05;
+        const right = (fp.x0 + fp.x1)/2 < W/2;
+        const tx = right ? W - tw - u*4 : u*4;
+        const lines = (t.survCard || '').split('\n').map(s=>s.trim()).filter(Boolean);
+        const ft = boxTempC(face);
+        if(ft != null) lines.push('TEMP: ' + tempStr(ft, 1));
+        const lh = fs*1.05, cardH = lh*(lines.length + 1.6) + fs*0.6;
+        const ty = Math.max(u*9, Math.min(fp.y0 - th*0.25, H - barH - th - cardH - u*3));
+        c.drawImage(o.det.thumb, tx, ty, tw, th);
+        c.strokeStyle = cc; c.lineWidth = lw*1.2; c.strokeRect(tx, ty, tw, th);
+        const fy = (fp.y0 + fp.y1)/2, fx = right ? fp.x1 : fp.x0, ex = right ? tx : tx + tw, mx = (fx + ex)/2;
+        c.lineWidth = lw;
+        c.beginPath(); c.moveTo(fx, fy); c.lineTo(mx, fy); c.lineTo(mx, ty + th*0.3); c.lineTo(ex, ty + th*0.3); c.stroke();
+        const cy = ty + th + u*0.6;
+        c.fillStyle = 'rgba(42,63,214,.92)'; c.fillRect(tx, cy, tw, cardH);
+        lines.forEach((ln, j)=>osdText(o, ln, tx + fs*0.5, cy + fs*0.5 + lh*(j + 0.5), fs*0.85, 'left', 'middle', j === 0 ? '#5ff0ff' : '#fff'));
+        const by = cy + fs*0.5 + lh*(lines.length + 0.4), bw = tw - fs*3.4;
+        c.strokeStyle = '#fff'; c.lineWidth = Math.max(1, lw*0.7);
+        c.strokeRect(tx + fs*0.5, by, bw, fs*0.5);
+        c.fillStyle = '#fff'; c.fillRect(tx + fs*0.5, by, bw*0.8, fs*0.5);
+        osdText(o, '80%', tx + tw - fs*0.5, by + fs*0.27, fs*0.8, 'right', 'middle', '#fff');
+      }
+      // barra de status embaixo: cada item com "ON"
+      c.fillStyle = 'rgba(0,0,0,.72)'; c.fillRect(0, H - barH, W, barH);
+      const items = (t.survStatus || '').split(',').map(s=>s.trim()).filter(Boolean);
+      const slot = W/Math.max(1, items.length);
+      c.font = osdFont(fs*0.85);
+      const onW = c.measureText(' ON').width;
+      items.forEach((it, k)=>{
+        c.font = osdFont(fs*0.85);
+        const itW = c.measureText(it).width, x = slot*k + (slot - itW - onW)/2, y = H - barH/2;
+        osdText(o, it, x, y, fs*0.85, 'left', 'middle', '#fff');
+        osdText(o, ' ON', x + itW, y, fs*0.85, 'left', 'middle', o.col);
+      });
+    },
+
+    // ref: CCTV — etiqueta da câmera e data/hora em caixas pretas
+    cctv(o){
+      const u = o.u, t = state.osd.text, fs = u*3, bh = fs*1.15;
+      osdTag(o, nthName(t.cctvCam, o.idx), u*3.2, u*3.2, fs, '#000', o.col, 'left');
+      // quadro sem sinal: a data "quebrada" da referência
+      const time = o.live ? fmtClock(o.now) : t.cctvTime, date = o.live ? fmtDate(o.now) : t.cctvDate;
+      osdTag(o, o.nosignal ? '99:99:99' : time, o.w - u*3.2, o.h - u*3.2 - bh, fs, '#000', o.col, 'right');
+      osdTag(o, o.nosignal ? '31/12/1999' : date, o.w - u*3.2, o.h - u*3.2 - bh*2, fs, '#000', o.col, 'right');
+    },
+
+    // ref: visor de camcorder — bateria, modo, REC, timecode, zoom W–T, FN
+    camcorder(o){
+      const c = o.ctx, u = o.u, t = state.osd.text, fs = u*3.1, W = o.w, H = o.h;
+      c.shadowColor = 'rgba(0,0,0,.85)'; c.shadowOffsetX = c.shadowOffsetY = Math.max(1, u*0.22); c.shadowBlur = 0;
+      c.strokeStyle = o.col; c.fillStyle = o.col; c.lineWidth = Math.max(1.2, u*0.28);
+      const x = u*4.5, y = u*5.5;
+      c.strokeRect(x, y - fs*0.3, fs*1.1, fs*0.6);
+      c.fillRect(x + fs*1.1, y - fs*0.14, fs*0.14, fs*0.28);
+      c.fillRect(x + fs*0.12, y - fs*0.18, fs*0.7, fs*0.36);
+      osdText(o, bumpNum(t.camBattery, o.idx), x + fs*1.45, y, fs, 'left', 'middle', o.col);
+      osdText(o, t.camMode, W*0.45, y, fs, 'left', 'middle', o.col);
+      osdText(o, 'REC', W*0.56, y, fs, 'left', 'middle', '#ff3b2f');
+      // ao vivo o timecode corre a partir do valor digitado
+      const run = o.live ? Math.floor(o.elapsed) : 0;
+      osdText(o, addSeconds(t.camTime, run + (o.idx ? (o.idx*97) % 300 : 0)), W - u*4.5, y, fs, 'right', 'middle', o.col);
+      const y2 = y + fs*1.1, bx = x + fs*0.75, bw = fs*2.2, bh = fs*0.42;
+      osdText(o, 'W', x, y2, fs*0.9, 'left', 'middle', o.col);
+      c.strokeStyle = o.col; c.strokeRect(bx, y2 - bh/2, bw, bh);
+      // a barra segue o zoom da câmera (na grade, o zoom do quadro)
+      c.fillStyle = o.col; c.fillRect(bx, y2 - bh/2, bw*Math.max(0.04, o.zoomPct/100), bh);
+      osdText(o, 'T', bx + bw + fs*0.2, y2, fs*0.9, 'left', 'middle', o.col);
+      c.shadowColor = 'transparent';
+      const fw = fs*1.7, fh = fs*0.95, fx = W - fw - u*4.5, fy = H - fh - u*4.5;
+      c.fillStyle = '#2f5fd0'; c.fillRect(fx, fy, fw, fh);
+      c.strokeStyle = '#cfd8ff'; c.lineWidth = Math.max(1, u*0.15); c.strokeRect(fx, fy, fw, fh);
+      osdText(o, 'FN', fx + fw/2, fy + fh*0.54, fs*0.85, 'center', 'middle', '#fff');
+    },
+  };
+
+  // "205min" + 1 → "206min"; o primeiro número do texto
+  const bumpNum = (str, d)=>d ? String(str).replace(/\d+/, m=>String(+m + d).padStart(m.length, '0')) : String(str);
+  // timecode "H:MM:SS" + s segundos
+  function addSeconds(tc, sec){
+    const parts = String(tc).split(':').map(Number);
+    if(parts.length < 2) return String(tc);
+    if(!sec || parts.some(n=>!Number.isFinite(n))) return String(tc);
+    let total = parts.reduce((acc, n)=>acc*60 + n, 0) + sec;
+    const out = [];
+    for(let i=parts.length-1; i>0; i--){ out.unshift(pad2(total % 60)); total = Math.floor(total/60); }
+    out.unshift(String(total));
+    return out.join(':');
+  }
+  // caixas da imagem levadas pro espaço do quadro (crop em coordenadas 0–1)
+  function mapDetections(crop){
+    const sw = crop.x1 - crop.x0, sh = crop.y1 - crop.y0;
+    const m = b=>{
+      const r = { x0:(b.x0 - crop.x0)/sw, y0:(b.y0 - crop.y0)/sh, x1:(b.x1 - crop.x0)/sw, y1:(b.y1 - crop.y0)/sh, orig:b };
+      return r.x1 <= 0 || r.x0 >= 1 || r.y1 <= 0 || r.y0 >= 1 ? null : r;
+    };
+    const persons = det.persons.map(m).filter(Boolean), faces = det.faces.map(m).filter(Boolean);
+    return { persons, faces, clothes:det.clothes.map(m).filter(Boolean), thumb: faces.length && faces[0].orig === det.faces[0] ? det.thumb : null };
+  }
+  const NO_DET = { persons:[], faces:[], clothes:[], thumb:null };
+
+  // cell = { idx, crop, zoom, nosignal } na grade; sem cell = quadro único
+  function drawOSD(ctx, w, h, cell){
+    const draw = OSD_DRAW[state.osd.template];
+    if(!draw) return;
+    // live: relógio, timecode e piscas andando; t = segundos (pros piscas),
+    // elapsed = tempo da câmera aberta ou posição no arquivo
+    const o = { ctx, w, h, u:(cell ? cell.osdLong : Math.max(w, h))/100*state.osd.size/100, col:state.osd.color, temps:sceneTempsC(),
+      idx:0, zoomPct:zoomFraction()*100, nosignal:false, det,
+      live:state.osd.live, now:new Date(), t:performance.now()/1000, elapsed:sourceElapsed() };
+    if(cell){
+      o.idx = cell.idx; o.zoomPct = Math.min(100, (cell.zoom - 1)/5*100); o.nosignal = cell.nosignal;
+      o.det = cell.nosignal ? NO_DET : mapDetections(cell.crop);
+    }
+    ctx.save();
+    draw(o);
+    ctx.restore();
+  }
+
+  /* ---------------------------------------------------------------------
+     GRADE MULTICÂMERA
+     A imagem inteira é renderizada uma vez (glCanvas) e cada quadro copia
+     dela um enquadramento, com o próprio OSD por cima.
+  --------------------------------------------------------------------- */
+  // cada layout é uma grade cols×rows e uma lista de quadros [coluna, linha,
+  // largura, altura] em células, na ordem de numeração; nosignal = quadro
+  // que começa "sem sinal" (-1 = nenhum). Layout novo = uma entrada aqui.
+  const uniformLayout = (cols, rows, nosignal)=>({ cols, rows, nosignal,
+    cells:Array.from({ length:cols*rows }, (_, i)=>[i % cols, Math.floor(i/cols), 1, 1]) });
+  const LAYOUTS = {
+    '1x1': uniformLayout(1, 1, -1),
+    '2x2': uniformLayout(2, 2, 2),
+    '2x3': uniformLayout(2, 3, 2),
+    '3x2': uniformLayout(3, 2, 2),
+    // destaque 2×2 no canto superior esquerdo + 5 quadros em volta (monitor de CCTV)
+    '1p5': { cols:3, rows:3, nosignal:5, cells:[[0,0,2,2], [2,0,1,1], [2,1,1,1], [0,2,1,1], [1,2,1,1], [2,2,1,1]] },
+  };
+  function gridCount(){ return LAYOUTS[state.grid.layout].cells.length; }
+  // quadros em px da saída (w×h) + o recorte de cada um na imagem
+  function gridCells(w, h){
+    const L = LAYOUTS[state.grid.layout];
+    if(L.cells.length === 1) return null;
+    const gap = state.grid.gap/1000*Math.max(w, h);
+    const uw = (w - gap*(L.cols + 1))/L.cols, uh = (h - gap*(L.rows + 1))/L.rows;
+    const out = L.cells.map(([c, r, sc, sr], idx)=>{
+      const cell = state.grid.cells[idx];
+      const x = gap + c*(uw + gap), y = gap + r*(uh + gap);
+      const cw = sc*uw + (sc - 1)*gap, ch = sr*uh + (sr - 1)*gap;
+      // recorte que cobre o quadro, com o zoom dele, sem sair da imagem
+      const asp = cw/ch, zoom = Math.max(1, cell.zoom);
+      const sw = Math.min(w, h*asp)/zoom, sh = sw/asp;
+      const sx = Math.min(w - sw, Math.max(0, cell.x*w - sw/2)), sy = Math.min(h - sh, Math.max(0, cell.y*h - sh/2));
+      return { idx, x, y, w:cw, h:ch, zoom, nosignal:cell.mode === 'nosignal',
+        src:{ sx, sy, sw, sh }, crop:{ x0:sx/w, y0:sy/h, x1:(sx + sw)/w, y1:(sy + sh)/h } };
+    });
+    // OSD do mesmo tamanho em todos os quadros, medido pelo menor (como o
+    // OSD em pixels fixos de um gravador de verdade)
+    const osdLong = Math.min(...out.map(c=>Math.max(c.w, c.h)));
+    out.forEach(c=>{ c.osdLong = osdLong; });
+    return out;
+  }
+  // quadro azul "sem sinal" com o texto numa caixa contornada
+  function drawNoSignal(ctx, cell){
+    ctx.fillStyle = '#0b17e8';
+    ctx.fillRect(cell.x, cell.y, cell.w, cell.h);
+    const text = state.grid.noSignal;
+    if(!text) return;
+    const fs = Math.max(cell.w, cell.h)*0.06;
+    ctx.font = osdFont(fs);
+    const tw = ctx.measureText(text).width, bw = tw + fs*1.2, bh = fs*1.7;
+    const cx = cell.x + cell.w/2, cy = cell.y + cell.h/2;
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1, fs*0.07);
+    ctx.strokeRect(cx - bw/2, cy - bh/2, bw, bh);
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(text, cx, cy + fs*0.05);
+  }
+  // enquadramentos automáticos: o 1º quadro é a imagem toda; os outros
+  // miram nos rostos e pessoas detectados, depois em pontos fixos.
+  // shuffle = sorteia pontos e zoom; keepModes = mantém o modo (imagem ou
+  // sem sinal) de cada quadro em vez de voltar ao padrão do layout
+  function autoCells(n, shuffle, keepModes){
+    const pts = [];
+    det.faces.forEach(f=>pts.push({ x:(f.x0 + f.x1)/2, y:(f.y0 + f.y1)/2, zoom:Math.min(6, Math.max(1.6, 0.45/Math.max(0.02, f.y1 - f.y0))) }));
+    det.persons.forEach(p=>pts.push({ x:(p.x0 + p.x1)/2, y:(p.y0 + p.y1)/2, zoom:Math.min(3, Math.max(1.1, 0.8/Math.max(p.y1 - p.y0, p.x1 - p.x0))) }));
+    [[0.5,0.35,2.2],[0.3,0.62,1.8],[0.7,0.5,2.6],[0.5,0.78,1.6],[0.35,0.3,3.2],[0.65,0.7,2]].forEach(([x, y, zoom])=>pts.push({ x, y, zoom }));
+    if(shuffle) for(let i=pts.length-1; i>0; i--){ const j = Math.floor(Math.random()*(i+1)); [pts[i], pts[j]] = [pts[j], pts[i]]; }
+    const old = state.grid.cells;
+    const cells = [];
+    for(let i=0; i<n; i++){
+      const mode = keepModes && old[i] ? old[i].mode : (i === LAYOUTS[state.grid.layout].nosignal ? 'nosignal' : 'image');
+      if(i === 0){ cells.push({ mode, x:0.5, y:0.5, zoom:1 }); continue; }
+      const p = pts[(i - 1) % pts.length];
+      const k = shuffle ? 0.8 + Math.random()*0.5 : 1;
+      cells.push({ mode, x:p.x, y:p.y, zoom:Math.min(6, Math.max(1, p.zoom*k)) });
+    }
+    return cells;
+  }
+
+  // imagem (com grade) + OSD + escala. Em "baixa resolução" o OSD é
+  // desenhado a 720 px e ampliado, como a interface de uma câmera de vídeo.
+  function drawOverlay(ctx, w, h, clear){
+    if(clear) ctx.clearRect(0, 0, w, h);
+    const cells = gridCells(w, h);
+    if(cells){
+      ctx.save();
+      ctx.fillStyle = state.grid.gapColor;
+      ctx.fillRect(0, 0, w, h);
+      ctx.imageSmoothingEnabled = !state.sensor.pixel;
+      ctx.imageSmoothingQuality = 'high';
+      cells.forEach(cell=>{
+        if(cell.nosignal) drawNoSignal(ctx, cell);
+        else ctx.drawImage(glCanvas, cell.src.sx, cell.src.sy, cell.src.sw, cell.src.sh, cell.x, cell.y, cell.w, cell.h);
+      });
+      ctx.restore();
+    }
+    if(OSD_DRAW[state.osd.template]){
+      const f = state.osd.lowres ? Math.min(1, 720/Math.max(w, h)) : 1;
+      let target = ctx, off = null;
+      if(f < 1){
+        off = document.createElement('canvas');
+        off.width = Math.max(1, Math.round(w*f)); off.height = Math.max(1, Math.round(h*f));
+        target = off.getContext('2d');
+      }
+      if(!cells) drawOSD(target, w*f, h*f, null);
+      else cells.forEach(cell=>{
+        target.save();
+        target.translate(cell.x*f, cell.y*f);
+        target.beginPath(); target.rect(0, 0, cell.w*f, cell.h*f); target.clip();
+        drawOSD(target, cell.w*f, cell.h*f, { ...cell, osdLong:cell.osdLong*f });
+        target.restore();
+      });
+      if(off){
+        ctx.save();
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(off, 0, 0, w, h);
+        ctx.restore();
+      }
+    }
+    drawScale(ctx, w, h, false);
+  }
+
+  /* ---------------------------------------------------------------------
+     RENDER
+  --------------------------------------------------------------------- */
+  // "temperaturas da cena": a escala segue a faixa atual na régua calor↔°C
+  function syncSceneTemps(){
+    if(!state.scale.auto) return;
+    const [lo, hi] = currentLoHi();
+    const tmin = Math.round(heatToC(lo)*10)/10, tmax = Math.round(heatToC(hi)*10)/10;
+    if(tmin === state.scale.tmin && tmax === state.scale.tmax) return;
+    state.scale.tmin = tmin; state.scale.tmax = tmax;
+    $('tmin').value = tmin;
+    $('tmax').value = tmax;
+  }
+  // um quadro: lê o calor de volta só a cada STATS_EVERY quadros
+  const STATS_EVERY = 6;
+  let frameNo = 0, statusText = '';
+  function render(){
+    if(!state.live || !srcTex) return;
+    frameNo++;
+    grainSeed[0] = Math.floor(Math.random()*4096); grainSeed[1] = Math.floor(Math.random()*4096);
+    const sd = renderAll(frameNo % STATS_EVERY !== 1);
+    syncSceneTemps();
+    drawOverlay(octx, RW, RH, true);
+    const txt = `${RW}×${RH}` + (sd.on ? ` · sensor ${sd.w}×${sd.h}` : '') + (perf.fps ? ` · ${perf.fps} fps` : '');
+    if(txt !== statusText){ statusText = txt; statusLabel.textContent = txt; }
+  }
+  // o loop de quadros já redesenha tudo (até 30×/s), então os controles não
+  // precisam pedir render
+  function requestRender(){}
+
+  /* ---------------------------------------------------------------------
+     PESSOA (IA)
+     MediaPipe Image Segmenter rodando no navegador. A biblioteca e os
+     modelos só são baixados quando a detecção é ligada; o resultado vira a
+     textura maskTex do recorte atual (o export reaproveita a mesma máscara).
+  --------------------------------------------------------------------- */
+  const MP_BASE = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1';
+  const SEG_MODELS = {
+    fast:   { label:'rápido',    size:'0,25 MB', url:'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite' },
+    detail: { label:'detalhado', size:'16 MB',   url:'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite' },
+  };
+  let visionPromise = null;
+  const segmenters = {};
+  let segToken = 0;
+  function loadVision(){
+    if(!visionPromise){
+      visionPromise = (async()=>{
+        const mp = await import(MP_BASE + '/vision_bundle.mjs');
+        const fileset = await mp.FilesetResolver.forVisionTasks(MP_BASE + '/wasm');
+        return { mp, fileset };
+      })();
+      visionPromise.catch(()=>{ visionPromise = null; });
+    }
+    return visionPromise;
+  }
+  function getSegmenter(mode){
+    if(!segmenters[mode]){
+      segmenters[mode] = (async()=>{
+        const { mp, fileset } = await loadVision();
+        const opts = delegate => ({
+          baseOptions:{ modelAssetPath:SEG_MODELS[mode].url, delegate },
+          runningMode:'IMAGE', outputConfidenceMasks:true, outputCategoryMask:false,
+        });
+        try { return await mp.ImageSegmenter.createFromOptions(fileset, opts('GPU')); }
+        catch(err){ return await mp.ImageSegmenter.createFromOptions(fileset, opts('CPU')); }
+      })();
+      segmenters[mode].catch(()=>{ delete segmenters[mode]; });
+    }
+    return segmenters[mode];
+  }
+  function setSegStatus(text, busy){
+    const el = $('segStatus');
+    el.innerHTML = '';
+    if(busy){ const s = document.createElement('span'); s.className = 'spinner'; el.appendChild(s); }
+    el.appendChild(document.createTextNode(text));
+  }
+  // roda a IA no recorte atual (ou só carrega o modelo, se ainda não há
+  // imagem). O token descarta resultados de pedidos que ficaram velhos.
+  async function runSegmentation(){
+    const mode = state.seg.mode;
+    const token = ++segToken;
+    mask.ready = false;
+    clearDetections();
+    syncSegUI();
+    syncOsdHint();
+    if(mode === 'off'){ setSegStatus(''); requestRender(); return; }
+    const m = SEG_MODELS[mode];
+    setSegStatus(`carregando modelo ${m.label} (${m.size})…`, true);
+    let seg;
+    try { seg = await getSegmenter(mode); }
+    catch(err){
+      console.error(err);
+      if(token === segToken) setSegStatus('não foi possível carregar o modelo. confira a conexão e tente de novo.');
+      return;
+    }
+    if(token !== segToken) return;
+    if(!state.live){ setSegStatus('modelo pronto. abra a câmera ou um vídeo.'); return; }
+    setSegStatus('detectando pessoa…', true);
+    // deixa o aviso aparecer: a 1ª execução compila o modelo e trava alguns segundos
+    await new Promise(r=>setTimeout(r, 30));
+    if(token !== segToken || !state.live) return;
+    let result;
+    try { result = seg.segment(srcCanvas); }
+    catch(err){ console.error(err); setSegStatus('não foi possível processar essa imagem.'); return; }
+    const masks = result.confidenceMasks;
+    const w = masks[0].width, h = masks[0].height, n = w*h;
+    const data = new Uint8Array(n*4);
+    let person = 0;
+    if(mode === 'fast'){
+      const p = masks[0].getAsFloat32Array();
+      for(let i=0; i<n; i++){ data[i*4] = Math.round(p[i]*255); person += p[i]; }
+    } else {
+      // fundo, cabelo, pele do corpo, pele do rosto, roupa, outros (acessórios)
+      const [bg, hair, body, face, cloth, other] = masks.map(mk=>mk.getAsFloat32Array());
+      for(let i=0; i<n; i++){
+        data[i*4]   = Math.round(hair[i]*255);
+        data[i*4+1] = Math.round(body[i]*255);
+        data[i*4+2] = Math.round(face[i]*255);
+        data[i*4+3] = Math.round(Math.min(1, cloth[i] + other[i])*255);
+        person += 1 - bg[i];
+      }
+    }
+    result.close();
+    uploadMask(data, w, h);
+    mask.ready = true;
+    mask.mode = mode === 'fast' ? 1 : 2;
+    computeDetections(data, w, h, mask.mode);
+    syncOsdHint();
+    // enquadramentos automáticos passam a mirar nas pessoas detectadas
+    if(state.grid.auto){ state.grid.cells = autoCells(gridCount(), false, true); syncGridUI(); }
+    const cover = person/n;
+    setSegStatus(cover < 0.005 ? 'nenhuma pessoa encontrada nesta imagem.' : `pessoa detectada (${Math.round(cover*100)}% da imagem).`);
+    requestRender();
+  }
+
+  /* ---------------------------------------------------------------------
+     CAIXAS DO OSD
+     Componentes conexos da máscara numa grade de ≤160 px: uma caixa por
+     pessoa, rosto e peça de roupa (coordenadas 0–1, origem no topo).
+  --------------------------------------------------------------------- */
+  const det = { persons:[], faces:[], clothes:[], thumb:null };
+  function clearDetections(){ det.persons = []; det.faces = []; det.clothes = []; det.thumb = null; }
+  // strong = células de confiança alta; um componente só vale se tiver um
+  // núcleo forte (limiar com histerese), o que corta manchas fracas soltas
+  function components(grid, strong, gw, gh, minFrac, maxN){
+    const seen = new Uint8Array(gw*gh), out = [], stack = [];
+    for(let i=0; i<gw*gh; i++){
+      if(!grid[i] || seen[i]) continue;
+      let x0 = gw, y0 = gh, x1 = 0, y1 = 0, area = 0, core = 0;
+      seen[i] = 1; stack.push(i);
+      while(stack.length){
+        const k = stack.pop(), x = k % gw, y = (k/gw)|0;
+        area++;
+        core += strong[k];
+        if(x < x0) x0 = x; if(x > x1) x1 = x; if(y < y0) y0 = y; if(y > y1) y1 = y;
+        if(x > 0 && grid[k-1] && !seen[k-1]){ seen[k-1] = 1; stack.push(k-1); }
+        if(x < gw-1 && grid[k+1] && !seen[k+1]){ seen[k+1] = 1; stack.push(k+1); }
+        if(y > 0 && grid[k-gw] && !seen[k-gw]){ seen[k-gw] = 1; stack.push(k-gw); }
+        if(y < gh-1 && grid[k+gw] && !seen[k+gw]){ seen[k+gw] = 1; stack.push(k+gw); }
+      }
+      if(area >= minFrac*gw*gh && core >= minFrac*gw*gh*0.25) out.push({ x0:x0/gw, y0:y0/gh, x1:(x1+1)/gw, y1:(y1+1)/gh, area });
+    }
+    return out.sort((a,b)=>b.area - a.area).slice(0, maxN);
+  }
+  // junta pedaços vizinhos (dilatação 3×3) antes de separar os componentes
+  function dilate(grid, gw, gh){
+    const out = new Uint8Array(gw*gh);
+    for(let y=0; y<gh; y++) for(let x=0; x<gw; x++){
+      if(!grid[y*gw + x]) continue;
+      for(let dy=-1; dy<=1; dy++) for(let dx=-1; dx<=1; dx++){
+        const xx = x + dx, yy = y + dy;
+        if(xx >= 0 && xx < gw && yy >= 0 && yy < gh) out[yy*gw + xx] = 1;
+      }
+    }
+    return out;
+  }
+  // data vem do MediaPipe (linha 0 = topo), antes do flip do upload. O
+  // limite é baixo de propósito: em fotos difíceis a confiança da pessoa
+  // fica em 30–60% e um corte em 50% deixa metade do corpo de fora.
+  function computeDetections(data, w, h, mode){
+    const f = Math.min(1, 160/Math.max(w, h));
+    const gw = Math.max(1, Math.round(w*f)), gh = Math.max(1, Math.round(h*f));
+    const n = gw*gh, LO = 0.3*255, HI = 0.6*255;
+    const P = new Uint8Array(n), F = new Uint8Array(n), C = new Uint8Array(n);
+    const Ps = new Uint8Array(n), Fs = new Uint8Array(n), Cs = new Uint8Array(n);
+    for(let gy=0; gy<gh; gy++) for(let gx=0; gx<gw; gx++){
+      const sx = Math.min(w-1, Math.floor((gx+0.5)/gw*w)), sy = Math.min(h-1, Math.floor((gy+0.5)/gh*h));
+      const i = (sy*w + sx)*4, k = gy*gw + gx;
+      const p = mode === 1 ? data[i] : data[i] + data[i+1] + data[i+2] + data[i+3];
+      P[k] = p > LO ? 1 : 0; Ps[k] = p > HI ? 1 : 0;
+      if(mode === 2){
+        F[k] = data[i+2] > LO ? 1 : 0; Fs[k] = data[i+2] > HI ? 1 : 0;
+        C[k] = data[i+3] > LO ? 1 : 0; Cs[k] = data[i+3] > HI ? 1 : 0;
+      }
+    }
+    det.persons = components(dilate(P, gw, gh), Ps, gw, gh, 0.015, 4);
+    det.faces = mode === 2 ? components(dilate(F, gw, gh), Fs, gw, gh, 0.0015, 4) : [];
+    det.clothes = mode === 2 ? components(dilate(C, gw, gh), Cs, gw, gh, 0.01, 4) : [];
+    det.thumb = det.faces.length ? makeFaceThumb(det.faces[0]) : null;
+  }
+  // miniatura do rosto em P&B estourado com ruído (estilo câmera de vigilância)
+  function makeFaceThumb(fc){
+    const W = srcCanvas.width, H = srcCanvas.height;
+    const side = Math.max((fc.x1 - fc.x0)*W, (fc.y1 - fc.y0)*H)*1.7;
+    const cx = (fc.x0 + fc.x1)/2*W, cy = (fc.y0 + fc.y1)/2*H;
+    const c = document.createElement('canvas');
+    c.width = 192; c.height = 202;
+    const x = c.getContext('2d', { willReadFrequently:true });
+    x.fillStyle = '#000'; x.fillRect(0, 0, c.width, c.height);
+    x.drawImage(srcCanvas, cx - side/2, cy - side*0.55, side, side*1.05, 0, 0, c.width, c.height);
+    const img = x.getImageData(0, 0, c.width, c.height), a = img.data;
+    for(let i=0; i<a.length; i+=4){
+      let v = 0.299*a[i] + 0.587*a[i+1] + 0.114*a[i+2];
+      v = (v - 118)*1.7 + 118 + (Math.random() - 0.5)*46;
+      a[i] = a[i+1] = a[i+2] = v < 0 ? 0 : v > 255 ? 255 : v;
+    }
+    x.putImageData(img, 0, 0);
+    return c;
+  }
+  const insideBox = (a, b)=>{ const cx = (a.x0 + a.x1)/2, cy = (a.y0 + a.y1)/2; return cx >= b.x0 && cx <= b.x1 && cy >= b.y0 && cy <= b.y1; };
+
+  // temperaturas pro OSD, lidas da cópia pequena do calor (linha 0 = base)
+  function sceneTempsC(){
+    const v = stats.samples;
+    if(!v) return { min:20, max:36 };
+    let mn = Infinity, mx = -Infinity;
+    for(let i=0; i<v.length; i++){ if(v[i] < mn) mn = v[i]; if(v[i] > mx) mx = v[i]; }
+    return { min:heatToC(mn), max:heatToC(mx) };
+  }
+  function boxTempC(b){
+    b = b.orig || b; // caixa mapeada pra um quadro da grade → a da imagem
+    const v = stats.samples;
+    if(!v) return null;
+    const W = stats.sw, H = stats.sh;
+    const x0 = Math.max(0, Math.floor(b.x0*W)), x1 = Math.min(W, Math.ceil(b.x1*W));
+    const y0 = Math.max(0, Math.floor(b.y0*H)), y1 = Math.min(H, Math.ceil(b.y1*H));
+    let mx = -Infinity;
+    for(let y=y0; y<y1; y++){
+      const row = (H - 1 - y)*W;
+      for(let x=x0; x<x1; x++) if(v[row + x] > mx) mx = v[row + x];
+    }
+    return mx > -Infinity ? heatToC(mx) : null;
+  }
+  function syncSegUI(){
+    const mode = state.seg.mode;
+    // temperaturas e fundo só valem no look térmico
+    $('segControls').style.display = mode === 'off' || state.look !== 'thermal' ? 'none' : '';
+    document.querySelectorAll('.seg-detail').forEach(el=>el.style.display = mode === 'detail' ? '' : 'none');
+    document.querySelectorAll('.seg-fast').forEach(el=>el.style.display = mode === 'fast' ? '' : 'none');
+    $('bgColorRow').style.display = state.seg.bg === 3 ? '' : 'none';
+    $('edgeRow').style.display = state.seg.bg > 0 ? '' : 'none';
+  }
+
+  /* ---------------------------------------------------------------------
+     CONTROLES
+  --------------------------------------------------------------------- */
+  function bindRange(id, get, set, fmt){
+    const el = $(id), val = $(id + 'Val');
+    const show = ()=>{ if(val) val.textContent = fmt ? fmt(+el.value) : el.value; };
+    el.value = get(); show();
+    el.addEventListener('input', ()=>{ set(+el.value); show(); requestRender(); });
+    return { sync(){ el.value = get(); show(); } };
+  }
+  function bindCheck(id, get, set){
+    const el = $(id);
+    el.checked = get();
+    el.addEventListener('change', ()=>{ set(el.checked); requestRender(); });
+    return el;
+  }
+  function bindToggle(groupId, get, set){
+    const group = $(groupId);
+    const sync = ()=>group.querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.v === String(get())));
+    group.querySelectorAll('button').forEach(b=>b.addEventListener('click', ()=>{ set(b.dataset.v); sync(); requestRender(); }));
+    sync();
+    return { sync };
+  }
+  const pct = v => v + '%';
+
+  // fonte do calor
+  bindRange('srcRed', ()=>state.src.red, v=>state.src.red = v, pct);
+  bindRange('srcSkin', ()=>state.src.skin, v=>state.src.skin = v, pct);
+  bindRange('srcLights', ()=>state.src.lights, v=>state.src.lights = v, pct);
+  bindCheck('srcInvert', ()=>state.src.invert, v=>state.src.invert = v);
+
+  // pessoa (ia): temperaturas em décimos de °C no slider
+  bindToggle('segModeGroup', ()=>state.seg.mode, v=>{ state.seg.mode = v; runSegmentation(); });
+  const degC = v => (v/10).toFixed(1) + '°';
+  [['tFace','tFace'],['tBody','tBody'],['tCloth','tCloth'],['tHair','tHair'],['tPerson','tPerson'],['tBg','tBg']].forEach(([id, key])=>{
+    bindRange(id, ()=>Math.round(state.seg[key]*10), v=>state.seg[key] = v/10, degC);
+  });
+  bindRange('photoInfl', ()=>state.seg.photo, v=>state.seg.photo = v, pct);
+  const bgMode = $('bgMode');
+  bgMode.value = state.seg.bg;
+  bgMode.addEventListener('change', ()=>{ state.seg.bg = +bgMode.value; syncSegUI(); requestRender(); });
+  const bgColor = $('bgColor');
+  bgColor.value = state.seg.bgColor;
+  bgColor.addEventListener('input', ()=>{ state.seg.bgColor = bgColor.value; requestRender(); });
+  bindRange('edge', ()=>state.seg.edge, v=>state.seg.edge = v, pct);
+  syncSegUI();
+
+  // sensor
+  const sensorRes = $('sensorRes');
+  sensorRes.value = state.sensor.res;
+  sensorRes.addEventListener('change', ()=>{ state.sensor.res = +sensorRes.value; requestRender(); });
+  // controles de sensor e ruído: cada look guarda os seus (ver switchLook)
+  const sharedCtls = [{ sync(){ sensorRes.value = state.sensor.res; } }];
+  sharedCtls.push(bindToggle('upscaleGroup', ()=>state.sensor.pixel ? 'pixel' : 'smooth', v=>state.sensor.pixel = v === 'pixel'));
+  sharedCtls.push(bindRange('diffusion', ()=>state.sensor.diffusion, v=>state.sensor.diffusion = v, pct));
+  sharedCtls.push(bindRange('msx', ()=>state.sensor.msx, v=>state.sensor.msx = v, pct));
+  sharedCtls.push(bindRange('bloom', ()=>state.sensor.bloom, v=>state.sensor.bloom = v, pct));
+
+  // faixa: mexer em nível/span desliga o automático
+  const rangeAuto = bindCheck('rangeAuto', ()=>state.range.auto, v=>{
+    state.range.auto = v;
+    if(!v){
+      // fica exatamente onde o automático estava, sem pulo
+      state.range.level = (stats.lo + stats.hi)/2*100;
+      state.range.span = (stats.hi - stats.lo)*100;
+    }
+  });
+  function manualRange(){ if(state.range.auto){ state.range.auto = false; rangeAuto.checked = false; } }
+  const levelCtl = bindRange('level', ()=>Math.round(state.range.level), v=>{ manualRange(); state.range.level = v; });
+  const spanCtl = bindRange('span', ()=>Math.max(1, Math.round(state.range.span)), v=>{ manualRange(); state.range.span = v; });
+  function syncRangeSliders(){
+    state.range.level = (stats.lo + stats.hi)/2*100;
+    state.range.span = (stats.hi - stats.lo)*100;
+    levelCtl.sync(); spanCtl.sync();
+  }
+  bindRange('gamma', ()=>Math.round(state.range.gamma*100), v=>state.range.gamma = v/100, v=>(v/100).toFixed(2));
+  bindRange('equalize', ()=>state.range.eq, v=>state.range.eq = v, pct);
+  bindRange('poster', ()=>Math.max(1, state.range.poster), v=>state.range.poster = v < 2 ? 0 : v, v=>v < 2 ? 'off' : String(v));
+
+  // paleta
+  const palGrid = $('palGrid');
+  PRESETS.forEach(p=>{
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'pal-btn'; b.dataset.key = p.key;
+    b.innerHTML = `<span>${p.name}</span><span class="strip" style="background:linear-gradient(90deg,${p.stops.join(',')})"></span>`;
+    b.addEventListener('click', ()=>{
+      state.palette.preset = p.key;
+      state.palette.stops = evenStops(p.stops);
+      buildStops();
+      paletteChanged();
+    });
+    palGrid.appendChild(b);
+  });
+  function markPalette(){
+    palGrid.querySelectorAll('.pal-btn').forEach(b=>{
+      const on = b.dataset.key === state.palette.preset;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on);
+    });
+  }
+  function paletteChanged(){
+    markPalette();
+    const css = sortedStops().map(s=>`${s.color} ${s.pos}%`).join(',');
+    $('palPreview').style.background = `linear-gradient(90deg,${css})`;
+    updateLut();
+    requestRender();
+  }
+  function customPalette(){ state.palette.preset = 'custom'; paletteChanged(); }
+
+  function buildStops(){
+    const host = $('palStops');
+    host.innerHTML = '';
+    const stops = state.palette.stops;
+    stops.forEach((stop, i)=>{
+      const row = document.createElement('div'); row.className = 'stop-row';
+      const colorInp = document.createElement('input');
+      colorInp.type = 'color'; colorInp.value = stop.color; colorInp.style.flex = '0 0 100px';
+      colorInp.setAttribute('aria-label', `Cor da parada ${i+1}`);
+      const posInp = document.createElement('input');
+      posInp.type = 'range'; posInp.autocomplete = 'off'; posInp.min = 0; posInp.max = 100; posInp.value = stop.pos;
+      posInp.setAttribute('aria-label', `Posição da parada ${i+1}`);
+      const val = document.createElement('span'); val.className = 'val'; val.textContent = stop.pos + '%';
+      const del = document.createElement('button');
+      del.type = 'button'; del.className = 'icon-btn'; del.textContent = '×';
+      del.setAttribute('aria-label', `Remover parada ${i+1}`);
+      del.disabled = stops.length <= 2;
+      colorInp.addEventListener('input', ()=>{ stop.color = colorInp.value; customPalette(); });
+      posInp.addEventListener('input', ()=>{ stop.pos = +posInp.value; val.textContent = posInp.value + '%'; customPalette(); });
+      del.addEventListener('click', ()=>{
+        if(stops.length <= 2) return;
+        stops.splice(i, 1);
+        buildStops();
+        customPalette();
+      });
+      row.append(colorInp, posInp, val, del);
+      host.appendChild(row);
+    });
+  }
+  // nova parada no meio do maior vão, com a cor que a paleta já tem ali
+  $('btnAddStop').addEventListener('click', ()=>{
+    const s = sortedStops();
+    let gi = 0, gap = -1;
+    for(let i=0; i<s.length-1; i++){ const g = s[i+1].pos - s[i].pos; if(g > gap){ gap = g; gi = i; } }
+    const pos = Math.round((s[gi].pos + s[gi+1].pos)/2);
+    const k = Math.round(pos/100*1023)*4;
+    const color = rgbToHex([lutData[k]/255, lutData[k+1]/255, lutData[k+2]/255]);
+    state.palette.stops = [...s.slice(0, gi+1), {color, pos}, ...s.slice(gi+1)];
+    buildStops();
+    customPalette();
+  });
+  $('btnReverseStops').addEventListener('click', ()=>{
+    state.palette.stops = sortedStops().reverse().map(s=>({ color:s.color, pos:100 - s.pos }));
+    buildStops();
+    customPalette();
+  });
+  bindCheck('palInvert', ()=>state.palette.invert, v=>state.palette.invert = v);
+  bindRange('cycles', ()=>Math.round(state.palette.cycles*2), v=>state.palette.cycles = v/2, v=>(v/2).toFixed(1) + '×');
+  bindRange('offset', ()=>state.palette.offset, v=>state.palette.offset = v, pct);
+
+  // ruído
+  sharedCtls.push(bindRange('grain', ()=>state.noise.grain, v=>state.noise.grain = v, pct));
+  sharedCtls.push(bindRange('grainSize', ()=>state.noise.size, v=>state.noise.size = v, v=>v + 'px'));
+  sharedCtls.push(bindRange('vignette', ()=>state.noise.vignette, v=>state.noise.vignette = v, pct));
+  sharedCtls.push(bindRange('fpn', ()=>state.noise.fpn, v=>state.noise.fpn = v, pct));
+
+  // escala
+  bindCheck('scaleShow', ()=>state.scale.show, v=>state.scale.show = v);
+  const syncScaleAuto = ()=>{ $('tmin').disabled = $('tmax').disabled = state.scale.auto; };
+  bindCheck('scaleAuto', ()=>state.scale.auto, v=>{ state.scale.auto = v; syncScaleAuto(); });
+  syncScaleAuto();
+
+  // osd: trocar de template traz a fonte e a cor dele; os textos de cada
+  // template ficam guardados mesmo trocando
+  const osdTemplate = $('osdTemplate'), osdFontSel = $('osdFont'), osdColor = $('osdColor');
+  osdTemplate.value = state.osd.template;
+  osdFontSel.value = state.osd.font;
+  osdColor.value = state.osd.color;
+  osdTemplate.addEventListener('change', ()=>{
+    state.osd.template = osdTemplate.value;
+    const tpl = OSD_TEMPLATES[state.osd.template];
+    if(tpl){
+      state.osd.font = osdFontSel.value = tpl.font;
+      state.osd.color = osdColor.value = tpl.color;
+    }
+    syncOsdUI();
+    loadOsdFont();
+    requestRender();
+  });
+  osdFontSel.addEventListener('change', ()=>{ state.osd.font = osdFontSel.value; loadOsdFont(); requestRender(); });
+  osdColor.addEventListener('input', ()=>{ state.osd.color = osdColor.value; requestRender(); });
+  bindRange('osdSize', ()=>state.osd.size, v=>state.osd.size = v, pct);
+  bindCheck('osdLowres', ()=>state.osd.lowres, v=>state.osd.lowres = v);
+  bindCheck('osdLive', ()=>state.osd.live, v=>{ state.osd.live = v; buildOsdFields(); });
+  function buildOsdFields(){
+    const host = $('osdFields');
+    host.innerHTML = '';
+    const tpl = OSD_TEMPLATES[state.osd.template];
+    if(!tpl) return;
+    tpl.fields.forEach(([key, label, , type])=>{
+      if(type === 'clock' && state.osd.live) return;
+      const row = document.createElement('div');
+      row.className = 'row' + (type === 'multi' ? ' row-top' : '');
+      const lbl = document.createElement('label');
+      lbl.textContent = label; lbl.htmlFor = 'osd_' + key;
+      let inp, val = null;
+      if(type === 'multi'){ inp = document.createElement('textarea'); inp.rows = 3; }
+      else if(type === 'range'){
+        inp = document.createElement('input'); inp.type = 'range'; inp.min = 0; inp.max = 100;
+        val = document.createElement('span'); val.className = 'val';
+      } else { inp = document.createElement('input'); inp.type = 'text'; }
+      inp.id = 'osd_' + key; inp.autocomplete = 'off'; inp.spellcheck = false;
+      inp.value = state.osd.text[key];
+      if(val) val.textContent = inp.value + '%';
+      inp.addEventListener('input', ()=>{
+        state.osd.text[key] = type === 'range' ? +inp.value : inp.value;
+        if(val) val.textContent = inp.value + '%';
+        requestRender();
+      });
+      row.append(lbl, inp);
+      if(val) row.append(val);
+      host.appendChild(row);
+    });
+  }
+  function syncOsdHint(){
+    const tpl = OSD_TEMPLATES[state.osd.template];
+    $('osdHint').textContent = tpl && tpl.seg && !mask.ready
+      ? 'ligue a detecção em "pessoa (ia)" pra ter as caixas automáticas em volta das pessoas.' : '';
+  }
+  function syncOsdUI(){
+    $('osdCommon').style.display = OSD_TEMPLATES[state.osd.template] ? '' : 'none';
+    buildOsdFields();
+    syncOsdHint();
+  }
+  function loadOsdFont(){
+    document.fonts.load(`20px ${OSD_FONTS[state.osd.font].css}`).then(()=>requestRender()).catch(()=>{});
+  }
+  syncOsdUI();
+
+  // look: troca sensor/ruído/cores junto, guardando os do look anterior
+  const lookStore = {};
+  const gradeCtls = [];
+  function switchLook(next){
+    if(next === state.look) return;
+    lookStore[state.look] = { sensor:{ ...state.sensor }, noise:{ ...state.noise }, grade:{ ...state.grade } };
+    const saved = lookStore[next] || (LOOK_DEFAULTS[next] && JSON.parse(JSON.stringify(LOOK_DEFAULTS[next])));
+    if(saved){
+      Object.assign(state.sensor, saved.sensor);
+      Object.assign(state.noise, saved.noise);
+      if(next !== 'thermal') state.grade = { ...saved.grade };
+    }
+    state.look = next;
+    sharedCtls.forEach(c=>c.sync());
+    gradeCtls.forEach(c=>c.sync());
+    syncLookUI();
+    if(lookCtl) lookCtl.sync();
+    showToast(LOOK_NAMES[next]);
+  }
+  const LOOKS = ['thermal', 'cctv', 'camcorder'];
+  const LOOK_NAMES = { thermal:'térmico', cctv:'cctv', camcorder:'camcorder' };
+  // swipe: próximo/anterior, parando nas pontas
+  function stepLook(d){
+    const i = LOOKS.indexOf(state.look) + d;
+    if(i >= 0 && i < LOOKS.length) switchLook(LOOKS[i]);
+  }
+  // painéis que só fazem sentido no térmico somem nos looks de vídeo
+  function syncLookUI(){
+    const thermal = state.look === 'thermal';
+    ['panelSource', 'panelRange', 'panelPalette', 'panelScale', 'msxRow'].forEach(id=>{ $(id).style.display = thermal ? '' : 'none'; });
+    $('panelLook').style.display = thermal ? 'none' : '';
+    $('segControls').style.display = thermal && state.seg.mode !== 'off' ? '' : 'none';
+    $('lkKeepRed').closest('.row').style.display = state.look === 'cctv' ? '' : 'none';
+  }
+  const lookCtl = bindToggle('lookGroup', ()=>state.look, v=>switchLook(v));
+  [['lkSat','sat', pct], ['lkTemp','temp'], ['lkTint','tint'], ['lkExposure','exposure'], ['lkContrast','contrast'],
+   ['lkLift','lift', pct], ['lkKeepRed','keepRed', pct], ['lkSharpen','sharpen', pct], ['lkLines','lines', pct]].forEach(([id, key, fmt])=>{
+    gradeCtls.push(bindRange(id, ()=>state.grade[key], v=>state.grade[key] = v, fmt || (v=>(v > 0 ? '+' : '') + v)));
+  });
+  syncLookUI();
+
+  // grade multicâmera
+  const gridLayout = $('gridLayout');
+  gridLayout.value = state.grid.layout;
+  state.grid.cells = autoCells(gridCount(), false, false);
+  const curCell = ()=>state.grid.cells[state.grid.sel];
+  // mexer num quadro tira a grade do modo automático (a detecção nova não
+  // refaz mais os enquadramentos)
+  const cellEdited = ()=>{ state.grid.auto = false; };
+  const cellCtls = [
+    bindToggle('cellMode', ()=>curCell().mode, v=>{ curCell().mode = v; cellEdited(); buildCellMap(); }),
+    bindRange('cellZoom', ()=>Math.round(curCell().zoom*100), v=>{ curCell().zoom = v/100; cellEdited(); }, v=>(v/100).toFixed(1) + '×'),
+    bindRange('cellX', ()=>Math.round(curCell().x*100), v=>{ curCell().x = v/100; cellEdited(); }, pct),
+    bindRange('cellY', ()=>Math.round(curCell().y*100), v=>{ curCell().y = v/100; cellEdited(); }, pct),
+  ];
+  // mini-mapa: o layout desenhado na proporção da imagem, um botão por quadro
+  function buildCellMap(){
+    const host = $('cellSel'), L = LAYOUTS[state.grid.layout];
+    host.innerHTML = '';
+    host.style.gridTemplateColumns = `repeat(${L.cols}, 1fr)`;
+    host.style.gridTemplateRows = `repeat(${L.rows}, 1fr)`;
+    const asp = state.live && RW && RH ? RW/RH : 0.8;
+    const w = Math.min(host.parentElement.clientWidth || 268, 150*asp);
+    host.style.width = w + 'px';
+    host.style.height = w/asp + 'px';
+    L.cells.forEach(([c, r, sc, sr], i)=>{
+      const nosignal = state.grid.cells[i] && state.grid.cells[i].mode === 'nosignal';
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = i + 1;
+      b.style.gridColumn = `${c + 1} / span ${sc}`;
+      b.style.gridRow = `${r + 1} / span ${sr}`;
+      b.classList.toggle('active', i === state.grid.sel);
+      b.classList.toggle('nosignal', nosignal);
+      b.setAttribute('aria-pressed', i === state.grid.sel);
+      b.setAttribute('aria-label', `Quadro ${i+1}` + (nosignal ? ', sem sinal' : ''));
+      b.addEventListener('click', ()=>{
+        state.grid.sel = i;
+        buildCellMap();
+        cellCtls.forEach(ctl=>ctl.sync());
+      });
+      host.appendChild(b);
+    });
+  }
+  function syncGridUI(){
+    $('gridControls').style.display = gridCount() > 1 ? '' : 'none';
+    state.grid.sel = Math.min(state.grid.sel, gridCount() - 1);
+    buildCellMap();
+    cellCtls.forEach(c=>c.sync());
+  }
+  gridLayout.addEventListener('change', ()=>{
+    state.grid.layout = gridLayout.value;
+    state.grid.auto = true;
+    state.grid.cells = autoCells(gridCount(), false, false);
+    syncGridUI();
+    requestRender();
+  });
+  bindRange('gridGap', ()=>state.grid.gap, v=>state.grid.gap = v, v=>(v/10).toFixed(1) + '%');
+  const gridGapColor = $('gridGapColor');
+  gridGapColor.value = state.grid.gapColor;
+  gridGapColor.addEventListener('input', ()=>{ state.grid.gapColor = gridGapColor.value; requestRender(); });
+  const gridNoSignal = $('gridNoSignal');
+  gridNoSignal.value = state.grid.noSignal;
+  gridNoSignal.addEventListener('input', ()=>{ state.grid.noSignal = gridNoSignal.value; requestRender(); });
+  $('btnShuffleCells').addEventListener('click', ()=>{
+    state.grid.cells = autoCells(gridCount(), true, true);
+    state.grid.auto = false;
+    cellCtls.forEach(c=>c.sync());
+    requestRender();
+  });
+  syncGridUI();
+  bindToggle('scalePosGroup', ()=>state.scale.pos, v=>state.scale.pos = v);
+  bindToggle('scaleUnitGroup', ()=>state.scale.unit, v=>state.scale.unit = v);
+  bindToggle('scaleTextGroup', ()=>state.scale.text, v=>state.scale.text = v);
+  ['tmin','tmax'].forEach(k=>{
+    const el = $(k);
+    el.value = state.scale[k];
+    el.addEventListener('input', ()=>{
+      const v = parseFloat(el.value);
+      if(Number.isFinite(v)){ state.scale[k] = v; requestRender(); }
+    });
+  });
+
+  /* ---------------------------------------------------------------------
+     FONTE: CÂMERA AO VIVO OU ARQUIVO DE VÍDEO
+     Os dois chegam no mesmo <video>; cada quadro é recortado/zoomado num
+     canvas na resolução de trabalho e vira a textura da foto do pipeline.
+  --------------------------------------------------------------------- */
+  // kind: 'camera' | 'file'; hwZoom = faixa do zoom da própria câmera, se o
+  // navegador expõe (no iPhone quase nunca: aí o zoom é digital)
+  const source = { kind:null, stream:null, track:null, url:null, facing:'environment', mirror:false, hwZoom:null, startedAt:0, cams:0 };
+  try { const f = localStorage.getItem('viewfinder-video-facing'); if(f === 'user' || f === 'environment') source.facing = f; } catch(e){}
+
+  function stopSource(){
+    state.live = false;
+    if(source.stream){ source.stream.getTracks().forEach(t=>t.stop()); source.stream = null; source.track = null; }
+    video.pause();
+    video.srcObject = null;
+    video.removeAttribute('src');
+    video.load();
+    if(source.url){ URL.revokeObjectURL(source.url); source.url = null; }
+    source.kind = null; source.hwZoom = null;
+  }
+  // primeiro quadro decodificado (videoWidth > 0) ou erro
+  function videoReady(){
+    return new Promise((resolve, reject)=>{
+      if(video.readyState >= 2 && video.videoWidth) return resolve();
+      const ok = ()=>{ off(); resolve(); }, bad = ()=>{ off(); reject(new Error('video')); };
+      const off = ()=>{ video.removeEventListener('loadeddata', ok); video.removeEventListener('error', bad); };
+      video.addEventListener('loadeddata', ok);
+      video.addEventListener('error', bad);
+    });
+  }
+  async function openCamera(){
+    if(!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw Object.assign(new Error('insecure'), { name:'Insecure' });
+    // o iPhone não abre duas câmeras ao mesmo tempo: solta a atual antes
+    stopSource();
+    const stream = await navigator.mediaDevices.getUserMedia({ audio:false,
+      video:{ facingMode:{ ideal:source.facing }, width:{ ideal:1920 }, height:{ ideal:1080 }, frameRate:{ ideal:30 } } });
+    source.kind = 'camera';
+    source.stream = stream;
+    source.track = stream.getVideoTracks()[0];
+    const caps = source.track.getCapabilities ? source.track.getCapabilities() : {};
+    const set = source.track.getSettings ? source.track.getSettings() : {};
+    source.hwZoom = caps.zoom && caps.zoom.max > caps.zoom.min ? { min:caps.zoom.min, max:Math.min(caps.zoom.max, 10) } : null;
+    // webcam de computador não diz o lado: trata como frontal (espelhada)
+    source.mirror = set.facingMode ? set.facingMode === 'user' : true;
+    video.srcObject = stream;
+    video.muted = true;
+    await video.play();
+    await videoReady();
+    source.startedAt = performance.now();
+    state.view.zoom = source.hwZoom ? Math.max(source.hwZoom.min, Math.min(source.hwZoom.max, set.zoom || 1)) : 1;
+    // o botão de virar só aparece com mais de uma câmera
+    try {
+      const devs = await navigator.mediaDevices.enumerateDevices();
+      source.cams = devs.filter(d=>d.kind === 'videoinput').length;
+    } catch(e){ source.cams = 1; }
+    sourceStarted();
+  }
+  async function openFile(file){
+    if(!file) return;
+    stopSource();
+    source.kind = 'file';
+    source.url = URL.createObjectURL(file);
+    source.mirror = false;
+    video.src = source.url;
+    video.muted = true;
+    video.loop = true;
+    await videoReady();
+    state.view.zoom = 1;
+    sourceStarted();
+    try { await video.play(); } catch(e){ /* sem autoplay: fica no play do transporte */ }
+    syncTransport();
+  }
+  function sourceStarted(){
+    state.live = true;
+    stats.seeded = false;
+    startScreen.hidden = true;
+    startMsg.textContent = '';
+    resizeWork();
+    syncHud();
+    startLoop();
+  }
+  function showStart(msg){
+    stopSource();
+    startScreen.hidden = false;
+    startMsg.textContent = msg || '';
+    setSheet(false);
+  }
+  function cameraError(err){
+    console.error(err);
+    const n = err && err.name;
+    if(n === 'NotAllowedError' || n === 'SecurityError') return 'a câmera foi bloqueada. libere o acesso nas configurações do navegador e tente de novo.';
+    if(n === 'NotFoundError' || n === 'OverconstrainedError') return 'nenhuma câmera encontrada neste aparelho.';
+    if(n === 'NotReadableError') return 'a câmera está em uso por outro app. feche o outro app e tente de novo.';
+    if(n === 'Insecure') return 'a câmera só funciona em https (ou localhost).';
+    return 'não foi possível abrir a câmera.';
+  }
+  const btnCam = $('btnCam');
+  btnCam.addEventListener('click', async()=>{
+    btnCam.disabled = true;
+    startMsg.textContent = '';
+    try { await openCamera(); }
+    catch(err){ showStart(cameraError(err)); }
+    btnCam.disabled = false;
+  });
+  const fileInput = $('fileInput');
+  $('btnFile').addEventListener('click', ()=>fileInput.click());
+  fileInput.addEventListener('change', async e=>{
+    const file = e.target.files && e.target.files[0];
+    fileInput.value = '';
+    if(!file) return;
+    try { await openFile(file); }
+    catch(err){ console.error(err); showStart('não foi possível abrir esse vídeo. tente um mp4 ou mov.'); }
+  });
+  // no desktop também dá pra soltar um vídeo em qualquer lugar da janela
+  window.addEventListener('dragover', e=>{ e.preventDefault(); });
+  window.addEventListener('drop', e=>{
+    e.preventDefault();
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if(file && file.type.startsWith('video/')) openFile(file).catch(err=>{ console.error(err); showStart('não foi possível abrir esse vídeo. tente um mp4 ou mov.'); });
+  });
+  $('btnHome').addEventListener('click', ()=>showStart());
+  $('btnFlip').addEventListener('click', async()=>{
+    source.facing = source.facing === 'user' ? 'environment' : 'user';
+    try { localStorage.setItem('viewfinder-video-facing', source.facing); } catch(e){}
+    try { await openCamera(); }
+    catch(err){ showStart(cameraError(err)); }
+  });
+  function syncHud(){
+    $('btnFlip').hidden = !(source.kind === 'camera' && source.cams > 1);
+    $('transport').hidden = source.kind !== 'file';
+  }
+  // segundos pro timecode do OSD: desde que a câmera abriu, ou a posição no arquivo
+  function sourceElapsed(){
+    if(source.kind === 'file') return video.currentTime || 0;
+    if(source.kind === 'camera') return (performance.now() - source.startedAt)/1000;
+    return 0;
+  }
+
+  /* ---------------------------------------------------------------------
+     TAMANHO DO QUADRO
+  --------------------------------------------------------------------- */
+  const ASPECTS = { '16:9':16/9, '4:3':4/3, '1:1':1 };
+  // proporção escolhida (em pé vira 9:16, 3:4) ou a do próprio vídeo, com o
+  // lado maior = WORK_LONG × escala do desempenho; lados pares (vídeo)
+  function workDims(){
+    const vw = video.videoWidth || 16, vh = video.videoHeight || 9;
+    let asp = vw/vh;
+    const a = ASPECTS[state.view.aspect];
+    if(a) asp = vw >= vh ? a : 1/a;
+    const long = WORK_LONG*perf.scale;
+    const even = v=>Math.max(2, Math.round(v/2)*2);
+    return asp >= 1 ? { w:even(long), h:even(long/asp) } : { w:even(long*asp), h:even(long) };
+  }
+  function resizeWork(){
+    const { w, h } = workDims();
+    if(w !== RW || h !== RH){
+      setOutputSize(w, h);
+      srcCanvas.width = w; srcCanvas.height = h;
+      buildCellMap();
+    }
+    fitFrame();
+  }
+  // contain dentro do visor
+  function fitFrame(){
+    if(!RW || !RH) return;
+    const vw = viewport.clientWidth, vh = viewport.clientHeight;
+    let w = vw, h = vw*RH/RW;
+    if(h > vh){ h = vh; w = vh*RW/RH; }
+    frame.style.width = Math.round(w) + 'px';
+    frame.style.height = Math.round(h) + 'px';
+  }
+  new ResizeObserver(fitFrame).observe(viewport);
+  bindToggle('aspectGroup', ()=>state.view.aspect, v=>{ state.view.aspect = v; if(state.live) resizeWork(); });
+
+  // o quadro do vídeo no canvas de trabalho: recorte central na proporção do
+  // quadro, menor ainda com o zoom digital; a frontal sai espelhada
+  function drawSourceFrame(){
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if(!vw || !vh || video.readyState < 2) return false;
+    if(workDims().w !== RW || workDims().h !== RH) resizeWork(); // girou o celular
+    const W = RW, H = RH, asp = W/H;
+    let sw = vw, sh = vw/asp;
+    if(sh > vh){ sh = vh; sw = vh*asp; }
+    const z = source.hwZoom ? 1 : state.view.zoom;
+    sw /= z; sh /= z;
+    sctx.save();
+    if(source.mirror){ sctx.translate(W, 0); sctx.scale(-1, 1); }
+    sctx.drawImage(video, (vw - sw)/2, (vh - sh)/2, sw, sh, 0, 0, W, H);
+    sctx.restore();
+    return true;
+  }
+
+  /* ---------------------------------------------------------------------
+     DESEMPENHO
+     Mede o ritmo real dos quadros; no automático, abaixo de ~24 fps a
+     resolução de trabalho desce um degrau, e só tenta subir de novo depois
+     de um tempo estável (pra não ficar oscilando).
+  --------------------------------------------------------------------- */
+  const PERF_STEPS = [1, 0.75, 0.5];
+  const perf = { scale:1, step:0, fps:0, n:0, acc:0, slowFor:0, fastFor:0, lastDown:0 };
+  function applyPerfMode(){
+    perf.step = state.view.perf === 'smooth' ? 2 : 0;
+    perf.scale = PERF_STEPS[perf.step];
+    perf.slowFor = perf.fastFor = 0;
+    if(state.live) resizeWork();
+  }
+  bindToggle('perfGroup', ()=>state.view.perf, v=>{ state.view.perf = v; applyPerfMode(); });
+  function perfTick(dt, now){
+    perf.n++; perf.acc += dt;
+    if(perf.acc < 1000) return;
+    perf.fps = Math.round(perf.n*1000/perf.acc);
+    const secs = perf.acc/1000;
+    perf.n = 0; perf.acc = 0;
+    if(state.view.perf !== 'auto') return;
+    if(perf.fps < 24){ perf.slowFor += secs; perf.fastFor = 0; }
+    else if(perf.fps >= 28){ perf.fastFor += secs; perf.slowFor = 0; }
+    else { perf.slowFor = perf.fastFor = 0; }
+    if(perf.slowFor >= 2 && perf.step < PERF_STEPS.length - 1){
+      perf.step++; perf.lastDown = now; perf.slowFor = 0;
+    } else if(perf.fastFor >= 8 && perf.step > 0 && now - perf.lastDown > 20000){
+      perf.step--; perf.fastFor = 0;
+    } else return;
+    perf.scale = PERF_STEPS[perf.step];
+    resizeWork();
+  }
+
+  /* ---------------------------------------------------------------------
+     LOOP DE QUADROS (até 30 por segundo)
+     Roda mesmo com o vídeo pausado: o grão e o OSD continuam vivos, como
+     uma fita parada.
+  --------------------------------------------------------------------- */
+  let loopOn = false, lastTick = 0;
+  function startLoop(){
+    if(loopOn) return;
+    loopOn = true;
+    lastTick = 0;
+    requestAnimationFrame(loop);
+  }
+  function loop(now){
+    if(!state.live){ loopOn = false; return; }
+    requestAnimationFrame(loop);
+    if(now - lastTick < 1000/30 - 4) return;
+    if(lastTick && now - lastTick < 500) perfTick(now - lastTick, now);
+    lastTick = now;
+    if(drawSourceFrame()){ uploadSource(srcCanvas); render(); }
+    if(source.kind === 'file') syncTransport();
+  }
+
+  /* ---------------------------------------------------------------------
+     GESTOS NO VISOR
+     Arrastar pro lado troca o look; pinça (ou a roda do mouse) dá zoom.
+  --------------------------------------------------------------------- */
+  function zoomRange(){ return source.hwZoom || { min:1, max:4 }; }
+  function zoomFraction(){
+    const r = zoomRange();
+    return r.max > r.min ? Math.min(1, Math.max(0, (state.view.zoom - r.min)/(r.max - r.min))) : 0;
+  }
+  // zoom óptico: um applyConstraints por vez, sempre com o valor mais novo
+  let hwBusy = false, hwNext = null;
+  async function applyHwZoom(z){
+    hwNext = z;
+    if(hwBusy) return;
+    hwBusy = true;
+    while(hwNext != null && source.track){
+      const v = hwNext; hwNext = null;
+      try { await source.track.applyConstraints({ advanced:[{ zoom:v }] }); }
+      catch(e){ source.hwZoom = null; state.view.zoom = 1; } // não aceitou: passa pro digital
+    }
+    hwBusy = false;
+  }
+  function setZoom(z){
+    const r = zoomRange();
+    z = Math.min(r.max, Math.max(r.min, z));
+    if(z === state.view.zoom) return;
+    state.view.zoom = z;
+    if(source.hwZoom) applyHwZoom(z);
+    showToast(z.toFixed(1) + '×');
+  }
+  const pointers = new Map();
+  let gesture = null;
+  viewport.addEventListener('pointerdown', e=>{
+    if(e.target.closest('button, input, a')) return;
+    // no celular, tocar no visor fecha a gaveta
+    if(sheet.dataset.open === 'true' && !isDesktop()){ setSheet(false); return; }
+    pointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    try { viewport.setPointerCapture(e.pointerId); } catch(err){}
+    if(pointers.size === 1) gesture = { type:'swipe', x0:e.clientX, y0:e.clientY, t0:performance.now() };
+    else if(pointers.size === 2){
+      const [a, b] = [...pointers.values()];
+      gesture = { type:'pinch', d0:Math.max(10, Math.hypot(b.x - a.x, b.y - a.y)), z0:state.view.zoom };
+    }
+  });
+  viewport.addEventListener('pointermove', e=>{
+    if(!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    if(gesture && gesture.type === 'pinch' && pointers.size >= 2){
+      const [a, b] = [...pointers.values()];
+      setZoom(gesture.z0*Math.hypot(b.x - a.x, b.y - a.y)/gesture.d0);
+    }
+  });
+  function pointerEnd(e){
+    if(!pointers.has(e.pointerId)) return;
+    pointers.delete(e.pointerId);
+    if(gesture && gesture.type === 'swipe' && e.type === 'pointerup'){
+      const dx = e.clientX - gesture.x0, dy = e.clientY - gesture.y0;
+      if(Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)*1.5 && performance.now() - gesture.t0 < 700) stepLook(dx < 0 ? 1 : -1);
+    }
+    // depois de uma pinça, o dedo que sobra não vira swipe
+    if(pointers.size === 0 || (gesture && gesture.type === 'pinch')) gesture = null;
+  }
+  viewport.addEventListener('pointerup', pointerEnd);
+  viewport.addEventListener('pointercancel', pointerEnd);
+  viewport.addEventListener('wheel', e=>{
+    if(!state.live) return;
+    e.preventDefault();
+    setZoom(state.view.zoom*(e.deltaY < 0 ? 1.08 : 1/1.08));
+  }, { passive:false });
+  // setas do teclado também trocam o look (desktop)
+  window.addEventListener('keydown', e=>{
+    if(!state.live || (e.target.closest && e.target.closest('input, textarea, select, button, [contenteditable]'))) return;
+    if(e.key === 'ArrowRight') stepLook(1);
+    else if(e.key === 'ArrowLeft') stepLook(-1);
+  });
+
+  /* ---------------------------------------------------------------------
+     TRANSPORTE (arquivo de vídeo)
+  --------------------------------------------------------------------- */
+  const scrub = $('scrub'), btnPlay = $('btnPlay'), timeLabel = $('timeLabel');
+  let scrubbing = false;
+  const fmtTime = s=>{ s = Math.max(0, Math.floor(s || 0)); return `${Math.floor(s/60)}:${pad2(s % 60)}`; };
+  function syncTransport(){
+    const d = video.duration;
+    if(!scrubbing && Number.isFinite(d) && d > 0) scrub.value = Math.round(video.currentTime/d*1000);
+    const txt = `${fmtTime(video.currentTime)} / ${fmtTime(d)}`;
+    if(timeLabel.textContent !== txt) timeLabel.textContent = txt;
+    const paused = video.paused;
+    if(btnPlay.dataset.paused !== String(paused)){
+      btnPlay.dataset.paused = paused;
+      btnPlay.querySelector('.ico-play').style.display = paused ? '' : 'none';
+      btnPlay.querySelector('.ico-pause').style.display = paused ? 'none' : '';
+      btnPlay.setAttribute('aria-label', paused ? 'Tocar' : 'Pausar');
+    }
+  }
+  btnPlay.addEventListener('click', ()=>{
+    if(video.paused) video.play().catch(()=>{});
+    else video.pause();
+    syncTransport();
+  });
+  scrub.addEventListener('input', ()=>{
+    scrubbing = true;
+    const d = video.duration;
+    if(Number.isFinite(d) && d > 0) video.currentTime = +scrub.value/1000*d;
+  });
+  scrub.addEventListener('change', ()=>{ scrubbing = false; });
+
+  /* ---------------------------------------------------------------------
+     GAVETA DE AJUSTES E AVISOS
+  --------------------------------------------------------------------- */
+  const sheet = $('sheet'), app = $('app'), btnSheet = $('btnSheet');
+  const isDesktop = ()=>matchMedia('(min-width: 900px)').matches;
+  function setSheet(open){
+    sheet.dataset.open = open;
+    app.classList.toggle('sheet-open', open);
+    btnSheet.setAttribute('aria-expanded', open);
+  }
+  btnSheet.addEventListener('click', ()=>setSheet(sheet.dataset.open !== 'true'));
+  $('btnSheetClose').addEventListener('click', ()=>setSheet(false));
+  window.addEventListener('keydown', e=>{ if(e.key === 'Escape' && sheet.dataset.open === 'true' && !isDesktop()) setSheet(false); });
+  // no desktop a gaveta começa aberta, como o painel do app de foto
+  setSheet(isDesktop());
+
+  const toast = $('toast');
+  let toastTimer = 0;
+  function showToast(text){
+    toast.textContent = text;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=>toast.classList.remove('show'), 700);
+  }
+
+  /* ---------------------------------------------------------------------
+     TEMA
+  --------------------------------------------------------------------- */
+  const themeBtn = $('themeBtn');
+  function syncThemeBtn(){
+    const label = document.documentElement.dataset.theme === 'dark' ? 'Mudar para o modo claro' : 'Mudar para o modo escuro';
+    themeBtn.setAttribute('aria-label', label);
+    themeBtn.title = label;
+  }
+  themeBtn.addEventListener('click', ()=>{
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem('viewfinder-video-theme', next); } catch(e){}
+    syncThemeBtn();
+  });
+  syncThemeBtn();
+
+  /* ---------------------------------------------------------------------
+     SELETOR DE COR (porte do Typexperimental)
+     Cada <input type=color> vira um botão (amostra + hex) que abre uma
+     janelinha própria: quadrado saturação/brilho, faixa de matiz, campo hex
+     e a fileira de cores usadas. O input nativo continua no DOM, escondido:
+     guarda o valor e recebe os eventos "input"/"change".
+  --------------------------------------------------------------------- */
+  const RECENT_COLORS_KEY = "viewfinder-video-recent-colors";
+  function rgbToHsv([r,g,b]){
+    const max = Math.max(r,g,b), min = Math.min(r,g,b), d = max - min;
+    let h = 0;
+    if(d){
+      if(max === r) h = ((g-b)/d) % 6;
+      else if(max === g) h = (b-r)/d + 2;
+      else h = (r-g)/d + 4;
+      h *= 60; if(h < 0) h += 360;
+    }
+    return [h, max ? d/max : 0, max];
+  }
+  function hsvToRgb(h, s, v){
+    const f = n=>{ const k = (n + h/60) % 6; return v - v*s*Math.max(0, Math.min(k, 4-k, 1)); };
+    return [f(5), f(3), f(1)];
+  }
+  function normalizeHex(str){
+    let v = str.trim().replace(/^#/, "").toLowerCase();
+    if(/^[0-9a-f]{3}$/.test(v)) v = v.split("").map(c=>c+c).join("");
+    return /^[0-9a-f]{6}$/.test(v) ? "#" + v : null;
+  }
+  function recentColors(){
+    try { const a = JSON.parse(localStorage.getItem(RECENT_COLORS_KEY) || "[]"); return Array.isArray(a) ? a : []; }
+    catch(e){ return []; }
+  }
+  function pushRecentColor(hex){
+    const list = [hex, ...recentColors().filter(c=>c !== hex)].slice(0, 8);
+    try { localStorage.setItem(RECENT_COLORS_KEY, JSON.stringify(list)); } catch(e){}
+  }
+  // cores da paleta atual + fundo + as últimas escolhidas
+  function usedColors(){
+    const list = [...sortedStops().map(s=>s.color), state.seg.bgColor, state.osd.color, state.grid.gapColor, ...recentColors()];
+    const seen = new Set();
+    return list.map(c=>normalizeHex(c)).filter(c=>c && !seen.has(c) && seen.add(c)).slice(0, 14);
+  }
+
+  const cpick = (()=>{
+    const pop = document.createElement("div");
+    pop.className = "cpick-pop"; pop.hidden = true;
+    pop.setAttribute("role", "dialog"); pop.setAttribute("aria-label", "Seletor de cor");
+    pop.innerHTML = `
+      <div class="cpick-sv" tabindex="0" role="slider" aria-label="Saturação e brilho"><div class="cpick-sv-handle"></div></div>
+      <input type="range" class="cpick-hue" min="0" max="360" step="1" aria-label="Matiz" autocomplete="off">
+      <div class="cpick-hexrow"><span class="cpick-chip"></span><input type="text" class="cpick-hex" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Código hex"></div>
+      <div class="cpick-used-label">Usadas</div>
+      <div class="cpick-used" role="group" aria-label="Cores usadas"></div>`;
+    document.body.appendChild(pop);
+    const sv = pop.querySelector(".cpick-sv"), handle = pop.querySelector(".cpick-sv-handle");
+    const hue = pop.querySelector(".cpick-hue"), hexIn = pop.querySelector(".cpick-hex");
+    const chip = pop.querySelector(".cpick-chip"), used = pop.querySelector(".cpick-used");
+    let input = null, trigger = null, hsv = [0,0,0], startValue = "";
+
+    function paint(){
+      const hex = rgbToHex(hsvToRgb(...hsv));
+      sv.style.backgroundColor = rgbToHex(hsvToRgb(hsv[0], 1, 1));
+      handle.style.left = (hsv[1]*100) + "%";
+      handle.style.top = ((1-hsv[2])*100) + "%";
+      sv.setAttribute("aria-valuetext", `saturação ${Math.round(hsv[1]*100)}%, brilho ${Math.round(hsv[2]*100)}%`);
+      hue.value = Math.round(hsv[0]);
+      chip.style.background = hex;
+      used.querySelectorAll(".cpick-dot").forEach(d=>d.setAttribute("aria-pressed", d.dataset.color === hex));
+      return hex;
+    }
+    // aplica no input nativo e avisa os handlers dele, como o picker nativo faria
+    function commit(fromHexField){
+      if(!input.isConnected) return close(false);
+      const hex = paint();
+      if(!fromHexField){ hexIn.value = hex; hexIn.classList.remove("invalid"); }
+      if(input.value !== hex){
+        input.value = hex;
+        input.dispatchEvent(new Event("input", {bubbles:true}));
+      }
+    }
+    function setFromHex(hex){
+      const [h,s,v] = rgbToHsv(hexToRgb(hex));
+      // cinza/preto não têm matiz: mantém a da faixa em vez de pular pro vermelho
+      hsv = [(s === 0 || v === 0) ? hsv[0] : h, v === 0 ? hsv[1] : s, v];
+    }
+    function buildUsed(){
+      used.innerHTML = "";
+      usedColors().forEach(c=>{
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "cpick-dot"; b.dataset.color = c;
+        b.style.background = c; b.title = c; b.setAttribute("aria-label", `Usar ${c}`);
+        b.addEventListener("click", ()=>{ setFromHex(c); commit(false); });
+        used.appendChild(b);
+      });
+    }
+    function place(){
+      if(!trigger || !trigger.isConnected) return close(false);
+      const r = trigger.getBoundingClientRect(), pw = pop.offsetWidth, ph = pop.offsetHeight;
+      let top = r.bottom + 6;
+      if(top + ph > innerHeight - 8 && r.top - ph - 6 >= 8) top = r.top - ph - 6;
+      pop.style.left = Math.max(8, Math.min(r.left, innerWidth - pw - 8)) + "px";
+      pop.style.top = Math.max(8, Math.min(top, innerHeight - ph - 8)) + "px";
+    }
+    function open(inp, trig){
+      if(input === inp) return close(true);
+      if(input) close(false);
+      input = inp; trigger = trig; startValue = inp.value;
+      hsv = [0,0,0]; setFromHex(inp.value);
+      buildUsed();
+      hexIn.value = paint(); hexIn.classList.remove("invalid");
+      pop.hidden = false;
+      trigger.setAttribute("aria-expanded", "true");
+      place();
+      sv.focus({preventScroll:true});
+    }
+    function close(refocus){
+      if(!input) return;
+      pop.hidden = true;
+      trigger.setAttribute("aria-expanded", "false");
+      if(input.value !== startValue){
+        pushRecentColor(input.value);
+        input.dispatchEvent(new Event("change", {bubbles:true}));
+      }
+      if(refocus && trigger.isConnected) trigger.focus({preventScroll:true});
+      input = null; trigger = null;
+    }
+    function svFromPointer(e){
+      const r = sv.getBoundingClientRect();
+      hsv[1] = Math.min(1, Math.max(0, (e.clientX - r.left)/r.width));
+      hsv[2] = 1 - Math.min(1, Math.max(0, (e.clientY - r.top)/r.height));
+      commit(false);
+    }
+    sv.addEventListener("pointerdown", e=>{ sv.setPointerCapture(e.pointerId); svFromPointer(e); });
+    sv.addEventListener("pointermove", e=>{ if(sv.hasPointerCapture(e.pointerId)) svFromPointer(e); });
+    sv.addEventListener("keydown", e=>{
+      const step = e.shiftKey ? 0.1 : 0.01;
+      const moves = { ArrowLeft:[-step,0], ArrowRight:[step,0], ArrowUp:[0,step], ArrowDown:[0,-step] };
+      const m = moves[e.key]; if(!m) return;
+      e.preventDefault();
+      hsv[1] = Math.min(1, Math.max(0, hsv[1] + m[0]));
+      hsv[2] = Math.min(1, Math.max(0, hsv[2] + m[1]));
+      commit(false);
+    });
+    hue.addEventListener("input", ()=>{ hsv[0] = +hue.value; commit(false); });
+    hexIn.addEventListener("input", ()=>{
+      const hex = normalizeHex(hexIn.value);
+      hexIn.classList.toggle("invalid", !hex && hexIn.value.trim() !== "");
+      if(hex){ setFromHex(hex); commit(true); }
+    });
+    hexIn.addEventListener("keydown", e=>{ if(e.key === "Enter"){ e.preventDefault(); close(true); } });
+    hexIn.addEventListener("blur", ()=>{ if(input){ hexIn.value = input.value; hexIn.classList.remove("invalid"); } });
+    pop.addEventListener("keydown", e=>{ if(e.key === "Escape"){ e.preventDefault(); close(true); } });
+    document.addEventListener("pointerdown", e=>{
+      if(input && !pop.contains(e.target) && !trigger.contains(e.target)) close(false);
+    }, true);
+    window.addEventListener("scroll", ()=>{ if(input) place(); }, true);
+    window.addEventListener("resize", ()=>{ if(input) place(); });
+    return { open, close };
+  })();
+
+  const valueDesc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+  function enhanceColorInput(inp){
+    if(inp.dataset.cpick) return;
+    inp.dataset.cpick = "1";
+    const trig = document.createElement("button");
+    trig.type = "button"; trig.className = "cpick-trigger";
+    trig.setAttribute("aria-haspopup", "dialog"); trig.setAttribute("aria-expanded", "false");
+    if(inp.style.flex) trig.style.flex = inp.style.flex;
+    trig.innerHTML = `<span class="cpick-chip"></span><span class="cpick-code"></span>`;
+    const chip = trig.firstChild, code = trig.lastChild;
+    if(inp.id){
+      trig.id = inp.id + "Pick";
+      document.querySelectorAll(`label[for="${inp.id}"]`).forEach(l=>{ l.htmlFor = trig.id; });
+    }
+    const lbl = inp.getAttribute("aria-label") || "Cor";
+    const sync = ()=>{
+      const v = valueDesc.get.call(inp);
+      chip.style.background = v; code.textContent = v.toUpperCase();
+      trig.setAttribute("aria-label", `${lbl}: ${v}`);
+    };
+    // valor trocado por código também atualiza o botão
+    Object.defineProperty(inp, "value", {
+      configurable: true,
+      get(){ return valueDesc.get.call(this); },
+      set(v){ valueDesc.set.call(this, v); sync(); },
+    });
+    inp.classList.add("cpick-native");
+    inp.after(trig);
+    sync();
+    trig.addEventListener("click", ()=>cpick.open(inp, trig));
+  }
+  // as paradas da paleta são recriadas a cada mudança de preset
+  new MutationObserver(muts=>{
+    for(const m of muts) for(const n of m.addedNodes){
+      if(n.nodeType !== 1) continue;
+      if(n.matches('input[type="color"]')) enhanceColorInput(n);
+      n.querySelectorAll?.('input[type="color"]').forEach(enhanceColorInput);
+    }
+  }).observe(document.body, {childList:true, subtree:true});
+
+  /* ---------------------------------------------------------------------
+     INIT
+  --------------------------------------------------------------------- */
+  buildStops();
+  document.querySelectorAll('input[type="color"]').forEach(enhanceColorInput);
+  paletteChanged();
+  // a escala usa Geist Mono no canvas: redesenha quando a fonte chegar
+  document.fonts.load('500 20px "Geist Mono"').then(()=>{ if(state.scale.show) requestRender(); }).catch(()=>{});
+})();
+</script>
+
+</body>
+</html>
