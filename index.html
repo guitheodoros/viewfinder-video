@@ -645,8 +645,7 @@
       <p class="hint">no canal vermelho a pele tende a ficar mais quente que na luminância. "pele aquece" detecta tons de pele pela cor e esquenta essas áreas mesmo com a fonte invertida. "luzes esquentam" deixa as áreas muito claras (lâmpadas, telas) quentes em qualquer modo.</p>
     </details>
 
-    <!-- etapa 3: IA por quadro com tracking -->
-    <details class="panel" name="painel" id="panelSeg" hidden>
+    <details class="panel" name="painel" id="panelSeg">
       <summary><h2>Pessoa (IA)</h2></summary>
       <div class="toggle-group" id="segModeGroup" style="margin-bottom:8px;">
         <button data-v="off" class="active">desligada</button>
@@ -671,13 +670,12 @@
             <option value="1">foto original</option>
             <option value="2">foto azulada</option>
             <option value="3">cor chapada</option>
-            <option value="4">transparente</option>
           </select>
         </div>
         <div class="row" id="bgColorRow"><label for="bgColor">cor</label><input type="color" id="bgColor" aria-label="Cor do fundo"></div>
         <div class="row" id="edgeRow"><label for="edge">borda</label><input type="range" id="edge" autocomplete="off" min="0" max="100"><span class="val" id="edgeVal"></span></div>
       </div>
-      <p class="hint">roda no seu navegador (MediaPipe): a foto não sai do computador. a rápida (0,25 MB) só recorta a pessoa; a detalhada (16 MB) separa cabelo, pele e roupa. o primeiro uso também baixa o motor da IA (~12 MB).</p>
+      <p class="hint">roda no seu aparelho (MediaPipe), quadro a quadro: o vídeo não sai dele. a rápida (0,25 MB) só recorta a pessoa; a detalhada (16 MB) separa cabelo, pele e roupa e pesa mais no celular. o primeiro uso baixa o motor da IA (~12 MB) e trava a imagem alguns segundos enquanto prepara.</p>
     </details>
 
     <details class="panel" name="painel">
@@ -1900,6 +1898,8 @@ void main(){
   // texto escuro em cores claras, branco em cores escuras
   const inkOn = hex=>{ const [r,g,b] = hexToRgb(hex); return 0.2126*r + 0.7152*g + 0.0722*b > 0.5 ? '#0a0a0a' : '#ffffff'; };
   // "SUBJECT 01" → "SUBJECT 02"… pras outras pessoas
+  // número fixo da pessoa (tracking) ou a posição na lista
+  const lab = (b, i)=>b.k != null ? b.k : i;
   const nthName = (name, i)=>i === 0 ? name
     : /\d+$/.test(name) ? name.replace(/\d+$/, d=>String(+d + i).padStart(d.length, '0')) : `${name} ${i+1}`;
 
@@ -1957,9 +1957,9 @@ void main(){
         if(by < hy + fs) by = y0 + u*0.8;
         c.fillStyle = 'rgba(232,232,232,.94)'; c.fillRect(x0, by, bw, bh);
         c.save(); c.beginPath(); c.rect(x0, by, Math.max(0, bw - fs*1.4), bh); c.clip();
-        osdText(o, nthName(t.scanName, i), x0 + fs*0.4, by + bh*0.54, fs*0.9, 'left', 'middle', '#1a1a1a');
+        osdText(o, nthName(t.scanName, lab(b, i)), x0 + fs*0.4, by + bh*0.54, fs*0.9, 'left', 'middle', '#1a1a1a');
         c.restore();
-        c.fillStyle = i % 2 ? red : '#2bd94a';
+        c.fillStyle = lab(b, i) % 2 ? red : '#2bd94a';
         c.beginPath(); c.arc(x1 - fs*0.7, by + bh/2, fs*0.32, 0, Math.PI*2); c.fill();
         const tc = boxTempC(b);
         if(tc != null){
@@ -2007,15 +2007,15 @@ void main(){
       osdText(o, 'REC', W - u*8.2, u*4 + fs*0.62, fs, 'left', 'middle', '#fff');
 
       const persons = o.det.persons.slice(0, 4);
-      const colorOf = b=>cols[Math.max(0, persons.findIndex(pp=>insideBox(b, pp))) % cols.length];
+      const colorOf = b=>{ const pp = persons.find(q=>insideBox(b, q)); return cols[(pp ? lab(pp, 0) : 0) % cols.length]; };
       persons.forEach((b, i)=>{
-        const p = boxPx(o, b), col = cols[i % cols.length];
+        const p = boxPx(o, b), id = lab(b, i), col = cols[id % cols.length];
         c.strokeStyle = col; c.lineWidth = lw;
         c.strokeRect(p.x0, p.y0, p.x1 - p.x0, p.y1 - p.y0);
         // rótulo acima da caixa; sem espaço (pessoa no topo), entra nela
         const above = p.y0 - fs*2.3 > u*1.5;
-        const tag = osdTag(o, i === 0 ? t.survName : `ID ${pad2(i+1)}`, p.x0, above ? p.y0 - fs*1.15 : p.y0 + lw, fs, col, inkOn(col), 'left');
-        const match = i === 0 ? t.survMatch : `${Math.max(40, 92 - i*9)}% MATCH`;
+        const tag = osdTag(o, id === 0 ? t.survName : `ID ${pad2(id+1)}`, p.x0, above ? p.y0 - fs*1.15 : p.y0 + lw, fs, col, inkOn(col), 'left');
+        const match = id === 0 ? t.survMatch : `${Math.max(40, 92 - id*9)}% MATCH`;
         if(above) osdText(o, match, p.x0, tag.y - fs*0.3, fs*0.8, 'left', 'bottom', '#fff');
         else osdText(o, match, p.x0 + u*0.3, tag.y + tag.h + fs*0.2, fs*0.8, 'left', 'top', '#fff');
       });
@@ -2127,7 +2127,7 @@ void main(){
   function mapDetections(crop){
     const sw = crop.x1 - crop.x0, sh = crop.y1 - crop.y0;
     const m = b=>{
-      const r = { x0:(b.x0 - crop.x0)/sw, y0:(b.y0 - crop.y0)/sh, x1:(b.x1 - crop.x0)/sw, y1:(b.y1 - crop.y0)/sh, orig:b };
+      const r = { x0:(b.x0 - crop.x0)/sw, y0:(b.y0 - crop.y0)/sh, x1:(b.x1 - crop.x0)/sw, y1:(b.y1 - crop.y0)/sh, k:b.k, orig:b };
       return r.x1 <= 0 || r.x0 >= 1 || r.y1 <= 0 || r.y0 >= 1 ? null : r;
     };
     const persons = det.persons.map(m).filter(Boolean), faces = det.faces.map(m).filter(Boolean);
@@ -2339,7 +2339,7 @@ void main(){
         const { mp, fileset } = await loadVision();
         const opts = delegate => ({
           baseOptions:{ modelAssetPath:SEG_MODELS[mode].url, delegate },
-          runningMode:'IMAGE', outputConfidenceMasks:true, outputCategoryMask:false,
+          runningMode:'VIDEO', outputConfidenceMasks:true, outputCategoryMask:false,
         });
         try { return await mp.ImageSegmenter.createFromOptions(fileset, opts('GPU')); }
         catch(err){ return await mp.ImageSegmenter.createFromOptions(fileset, opts('CPU')); }
@@ -2354,63 +2354,109 @@ void main(){
     if(busy){ const s = document.createElement('span'); s.className = 'spinner'; el.appendChild(s); }
     el.appendChild(document.createTextNode(text));
   }
-  // roda a IA no recorte atual (ou só carrega o modelo, se ainda não há
-  // imagem). O token descarta resultados de pedidos que ficaram velhos.
+  // segRun: o modelo pronto pro modo atual e o estado da execução por quadro
+  const segRun = { model:null, mode:0, warm:false, warming:false, n:0, ts:0, ms:0, prev:null, statusAt:0, thumbN:0 };
+  // a IA roda a cada 1, 2 ou 3 quadros conforme o degrau do desempenho
+  const SEG_EVERY = [1, 2, 3];
+  // entrada pequena: os modelos trabalham em 256 px de qualquer jeito
+  const SEG_LONG = 256;
+  const segCanvas = document.createElement('canvas');
+  const segCtx = segCanvas.getContext('2d', { willReadFrequently:true });
+  function resetSegFrame(){
+    mask.ready = false;
+    segRun.prev = null;
+    clearDetections();
+    resetTracks();
+  }
+  // troca de modo: carrega o modelo (o token descarta pedidos que ficaram velhos)
   async function runSegmentation(){
     const mode = state.seg.mode;
     const token = ++segToken;
-    mask.ready = false;
-    clearDetections();
+    segRun.model = null;
+    segRun.warm = segRun.warming = false;
+    resetSegFrame();
     syncSegUI();
     syncOsdHint();
-    if(mode === 'off'){ setSegStatus(''); requestRender(); return; }
+    if(mode === 'off'){ setSegStatus(''); return; }
     const m = SEG_MODELS[mode];
     setSegStatus(`carregando modelo ${m.label} (${m.size})…`, true);
-    let seg;
-    try { seg = await getSegmenter(mode); }
+    let model;
+    try { model = await getSegmenter(mode); }
     catch(err){
       console.error(err);
       if(token === segToken) setSegStatus('não foi possível carregar o modelo. confira a conexão e tente de novo.');
       return;
     }
     if(token !== segToken) return;
-    if(!state.live){ setSegStatus('modelo pronto. abra a câmera ou um vídeo.'); return; }
-    setSegStatus('detectando pessoa…', true);
-    // deixa o aviso aparecer: a 1ª execução compila o modelo e trava alguns segundos
-    await new Promise(r=>setTimeout(r, 30));
-    if(token !== segToken || !state.live) return;
+    segRun.model = model;
+    segRun.mode = mode === 'fast' ? 1 : 2;
+    if(!state.live) setSegStatus('modelo pronto. abra a câmera ou um vídeo.');
+  }
+  // um passo da IA no quadro atual (chamado pelo loop, antes do render)
+  function segStep(now){
+    if(!segRun.model) return;
+    // a 1ª execução compila o modelo e trava alguns segundos: avisa antes
+    if(!segRun.warm){
+      if(!segRun.warming){
+        segRun.warming = true;
+        setSegStatus('preparando a IA (a imagem pode parar alguns segundos)…', true);
+        segRun.n = -2; // espera o aviso aparecer na tela
+        return;
+      }
+      if(++segRun.n < 0) return;
+    } else if(++segRun.n % SEG_EVERY[perf.step] !== 0) return;
+    const f = Math.min(1, SEG_LONG/Math.max(RW, RH));
+    const w = Math.max(1, Math.round(RW*f)), h = Math.max(1, Math.round(RH*f));
+    if(segCanvas.width !== w || segCanvas.height !== h){ segCanvas.width = w; segCanvas.height = h; segRun.prev = null; }
+    segCtx.drawImage(srcCanvas, 0, 0, w, h);
+    const t0 = performance.now();
     let result;
-    try { result = seg.segment(srcCanvas); }
-    catch(err){ console.error(err); setSegStatus('não foi possível processar essa imagem.'); return; }
+    try {
+      // os timestamps precisam sempre crescer
+      segRun.ts = Math.max(segRun.ts + 1, Math.round(t0));
+      result = segRun.model.segmentForVideo(segCanvas, segRun.ts);
+    } catch(err){
+      console.error(err);
+      setSegStatus('a IA parou com erro. desligue e ligue de novo.');
+      segRun.model = null;
+      resetSegFrame();
+      return;
+    }
     const masks = result.confidenceMasks;
-    const w = masks[0].width, h = masks[0].height, n = w*h;
+    const mw = masks[0].width, mh = masks[0].height, n = mw*mh;
     const data = new Uint8Array(n*4);
-    let person = 0;
-    if(mode === 'fast'){
+    if(segRun.mode === 1){
       const p = masks[0].getAsFloat32Array();
-      for(let i=0; i<n; i++){ data[i*4] = Math.round(p[i]*255); person += p[i]; }
+      for(let i=0; i<n; i++){ data[i*4] = p[i]*255; }
     } else {
       // fundo, cabelo, pele do corpo, pele do rosto, roupa, outros (acessórios)
-      const [bg, hair, body, face, cloth, other] = masks.map(mk=>mk.getAsFloat32Array());
+      const [, hair, body, face, cloth, other] = masks.map(mk=>mk.getAsFloat32Array());
       for(let i=0; i<n; i++){
-        data[i*4]   = Math.round(hair[i]*255);
-        data[i*4+1] = Math.round(body[i]*255);
-        data[i*4+2] = Math.round(face[i]*255);
-        data[i*4+3] = Math.round(Math.min(1, cloth[i] + other[i])*255);
-        person += 1 - bg[i];
+        data[i*4]   = hair[i]*255;
+        data[i*4+1] = body[i]*255;
+        data[i*4+2] = face[i]*255;
+        data[i*4+3] = Math.min(1, cloth[i] + other[i])*255;
       }
     }
     result.close();
-    uploadMask(data, w, h);
+    // máscara misturada com a anterior: tira a tremedeira das bordas
+    const prev = segRun.prev;
+    if(prev && prev.length === data.length) for(let i=0; i<data.length; i++) data[i] = prev[i]*0.4 + data[i]*0.6;
+    segRun.prev = data;
+    uploadMask(data, mw, mh);
     mask.ready = true;
-    mask.mode = mode === 'fast' ? 1 : 2;
-    computeDetections(data, w, h, mask.mode);
-    syncOsdHint();
-    // enquadramentos automáticos passam a mirar nas pessoas detectadas
-    if(state.grid.auto){ state.grid.cells = autoCells(gridCount(), false, true); syncGridUI(); }
-    const cover = person/n;
-    setSegStatus(cover < 0.005 ? 'nenhuma pessoa encontrada nesta imagem.' : `pessoa detectada (${Math.round(cover*100)}% da imagem).`);
-    requestRender();
+    mask.mode = segRun.mode;
+    updateDetections(data, mw, mh, mask.mode, now);
+    const dt = performance.now() - t0;
+    // a 1ª execução (compilação) não entra na média
+    if(segRun.warm) segRun.ms = segRun.ms ? segRun.ms*0.8 + dt*0.2 : dt;
+    if(!segRun.warm){ segRun.warm = true; syncOsdHint(); }
+    if(now - segRun.statusAt > 1000){
+      segRun.statusAt = now;
+      const people = det.persons.length;
+      const ms = segRun.ms ? ` · ${Math.round(segRun.ms)} ms por quadro` : '';
+      setSegStatus(!people ? `procurando pessoas…${ms}` : `${people} ${people === 1 ? 'pessoa' : 'pessoas'} no quadro${ms}`);
+    }
   }
 
   /* ---------------------------------------------------------------------
@@ -2457,7 +2503,7 @@ void main(){
   // data vem do MediaPipe (linha 0 = topo), antes do flip do upload. O
   // limite é baixo de propósito: em fotos difíceis a confiança da pessoa
   // fica em 30–60% e um corte em 50% deixa metade do corpo de fora.
-  function computeDetections(data, w, h, mode){
+  function rawDetections(data, w, h, mode){
     const f = Math.min(1, 160/Math.max(w, h));
     const gw = Math.max(1, Math.round(w*f)), gh = Math.max(1, Math.round(h*f));
     const n = gw*gh, LO = 0.3*255, HI = 0.6*255;
@@ -2473,10 +2519,67 @@ void main(){
         C[k] = data[i+3] > LO ? 1 : 0; Cs[k] = data[i+3] > HI ? 1 : 0;
       }
     }
-    det.persons = components(dilate(P, gw, gh), Ps, gw, gh, 0.015, 4);
-    det.faces = mode === 2 ? components(dilate(F, gw, gh), Fs, gw, gh, 0.0015, 4) : [];
-    det.clothes = mode === 2 ? components(dilate(C, gw, gh), Cs, gw, gh, 0.01, 4) : [];
-    det.thumb = det.faces.length ? makeFaceThumb(det.faces[0]) : null;
+    return {
+      persons: components(dilate(P, gw, gh), Ps, gw, gh, 0.015, 4),
+      faces: mode === 2 ? components(dilate(F, gw, gh), Fs, gw, gh, 0.0015, 4) : [],
+      clothes: mode === 2 ? components(dilate(C, gw, gh), Cs, gw, gh, 0.01, 4) : [],
+    };
+  }
+
+  /* ---------------------------------------------------------------------
+     TRACKING
+     Cada caixa nova é casada com uma caixa do quadro anterior (maior
+     sobreposição, ou o centro mais perto); a posição é suavizada e a caixa
+     segura ~0,6 s quando a pessoa some por um instante. k = número fixo da
+     pessoa enquanto ela estiver no quadro (o menor livre quando aparece):
+     o OSD usa ele pros nomes e cores, então "SUBJECT 01" não troca de pessoa.
+  --------------------------------------------------------------------- */
+  const TRACK_HOLD = 600, TRACK_EASE = 0.5;
+  const trackers = { persons:[], faces:[], clothes:[] };
+  function resetTracks(){ trackers.persons = []; trackers.faces = []; trackers.clothes = []; }
+  function iou(a, b){
+    const ix = Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)), iy = Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
+    const inter = ix*iy, uni = (a.x1 - a.x0)*(a.y1 - a.y0) + (b.x1 - b.x0)*(b.y1 - b.y0) - inter;
+    return uni > 0 ? inter/uni : 0;
+  }
+  function trackBoxes(list, boxes, now){
+    const pairs = [];
+    list.forEach((t, ti)=>boxes.forEach((b, bi)=>{
+      const o = iou(t, b);
+      const d = Math.hypot((t.x0 + t.x1 - b.x0 - b.x1)/2, (t.y0 + t.y1 - b.y0 - b.y1)/2);
+      const score = o > 0 ? 1 + o : d < 0.15 ? 1 - d/0.15 : 0;
+      if(score > 0) pairs.push([score, ti, bi]);
+    }));
+    pairs.sort((a, b)=>b[0] - a[0]);
+    const usedT = new Set(), usedB = new Set();
+    for(const [, ti, bi] of pairs){
+      if(usedT.has(ti) || usedB.has(bi)) continue;
+      usedT.add(ti); usedB.add(bi);
+      const t = list[ti], b = boxes[bi];
+      for(const key of ['x0', 'y0', 'x1', 'y1']) t[key] += (b[key] - t[key])*TRACK_EASE;
+      t.seen = now; t.hits++;
+    }
+    boxes.forEach((b, bi)=>{
+      if(usedB.has(bi)) return;
+      const taken = new Set(list.map(t=>t.k));
+      let k = 0;
+      while(taken.has(k)) k++;
+      list.push({ x0:b.x0, y0:b.y0, x1:b.x1, y1:b.y1, k, seen:now, hits:1 });
+    });
+    const alive = list.filter(t=>now - t.seen < TRACK_HOLD);
+    list.length = 0;
+    list.push(...alive);
+    // caixa de um quadro só não aparece (corta piscadas da detecção)
+    return alive.filter(t=>t.hits >= 2).sort((a, b)=>a.k - b.k);
+  }
+  function updateDetections(data, w, h, mode, now){
+    const raw = rawDetections(data, w, h, mode);
+    det.persons = trackBoxes(trackers.persons, raw.persons, now);
+    det.faces = trackBoxes(trackers.faces, raw.faces, now);
+    det.clothes = trackBoxes(trackers.clothes, raw.clothes, now);
+    // o recorte do rosto (vigilância) atualiza algumas vezes por segundo
+    if(!det.faces.length) det.thumb = null;
+    else if(!det.thumb || ++segRun.thumbN % 4 === 0) det.thumb = makeFaceThumb(det.faces[0]);
   }
   // miniatura do rosto em P&B estourado com ruído (estilo câmera de vigilância)
   function makeFaceThumb(fc){
@@ -2984,6 +3087,7 @@ void main(){
   }
   function sourceStarted(){
     state.live = true;
+    resetSegFrame();
     stats.seeded = false;
     startScreen.hidden = true;
     startMsg.textContent = '';
@@ -3161,7 +3265,11 @@ void main(){
     if(now - lastTick < 1000/30 - 4) return;
     if(lastTick && now - lastTick < 500) perfTick(now - lastTick, now);
     lastTick = now;
-    if(drawSourceFrame()){ uploadSource(srcCanvas); render(); }
+    if(drawSourceFrame()){
+      if(segRun.model) segStep(now);
+      uploadSource(srcCanvas);
+      render();
+    }
     if(source.kind === 'file') syncTransport();
   }
 
