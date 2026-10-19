@@ -220,11 +220,24 @@
   #start{
     position:absolute; inset:0; z-index:40;
     display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px;
-    padding:24px 16px; text-align:center; color:#f2f2f2;
-    /* a demonstração roda atrás, escurecida no centro pra o texto ler bem */
-    background:radial-gradient(ellipse at center, rgba(0,0,0,.72) 0%, rgba(0,0,0,.45) 60%, rgba(0,0,0,.25) 100%);
+    padding:24px 16px; text-align:center; color:#f2f2f2; background:#000;
+    isolation:isolate; overflow:hidden;
   }
   #start[hidden]{ display:none; }
+  /* vídeo de demonstração atrás de tudo, cobrindo a tela; o gradiente do
+     #start fica por cima dele num ::before */
+  #start .demo-video{ position:absolute; inset:0; z-index:-2; width:100%; height:100%; object-fit:cover; pointer-events:none; }
+  #start::before{
+    content:""; position:absolute; inset:0; z-index:-1; pointer-events:none;
+    background:radial-gradient(ellipse at center, rgba(0,0,0,.7) 0%, rgba(0,0,0,.5) 60%, rgba(0,0,0,.35) 100%);
+  }
+  /* celular em pé: o vídeo (horizontal) fica no alto e some num degradê;
+     título e botões descem pra parte de baixo */
+  @media (orientation: portrait){
+    #start{ padding-top:36%; padding-top:36dvh; padding-bottom:calc(48px + env(safe-area-inset-bottom)); }
+    #start .demo-video{ inset:auto; top:0; left:0; height:36%; }
+    #start::before{ background:linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,.1) 22%, rgba(0,0,0,.8) 33%, #000 37%); }
+  }
   #start h1{ font-size:30px; font-weight:600; margin:0; letter-spacing:.5px; }
   #start h1{ text-shadow:0 2px 12px rgba(0,0,0,.5); }
   #start .lede{ margin:0 0 14px; font-size:12px; color:rgba(255,255,255,.75); max-width:300px; line-height:1.5; }
@@ -876,6 +889,7 @@
   </div>
 
   <div id="start">
+    <video id="demoVideo" class="demo-video" src="media/demo.mp4" poster="media/demo-poster.jpg" muted loop playsinline preload="auto" aria-hidden="true"></video>
     <h1>Viewfinder Video</h1>
     <p class="lede">câmera térmica, cctv e camcorder ao vivo, direto no navegador.</p>
     <button class="btn primary" id="btnCam" type="button">● abrir câmera</button>
@@ -2947,7 +2961,7 @@ void main(){
   // look: troca sensor/ruído/cores junto, guardando os do look anterior
   const lookStore = {};
   const gradeCtls = [];
-  function switchLook(next, silent){
+  function switchLook(next){
     if(next === state.look) return;
     lookStore[state.look] = { sensor:{ ...state.sensor }, noise:{ ...state.noise }, grade:{ ...state.grade } };
     const saved = lookStore[next] || (LOOK_DEFAULTS[next] && JSON.parse(JSON.stringify(LOOK_DEFAULTS[next])));
@@ -2961,7 +2975,7 @@ void main(){
     gradeCtls.forEach(c=>c.sync());
     syncLookUI();
     if(lookCtl) lookCtl.sync();
-    if(!silent) showToast(LOOK_NAMES[next]);
+    showToast(LOOK_NAMES[next]);
   }
   const LOOKS = ['thermal', 'cctv', 'camcorder'];
   const LOOK_NAMES = { thermal:'térmico', cctv:'cctv', camcorder:'camcorder' };
@@ -3080,7 +3094,6 @@ void main(){
   // sem processamento de voz: o som ambiente sai como o microfone ouve
   const MIC = { echoCancellation:false, noiseSuppression:false, autoGainControl:false };
   function stopSource(){
-    if(demo.on) stopDemo();
     if(rec.active) stopRecording(rec.exporting);
     state.live = false;
     if(source.stream){ source.stream.getTracks().forEach(t=>t.stop()); source.stream = null; source.track = null; }
@@ -3160,7 +3173,7 @@ void main(){
     syncTransport();
   }
   function sourceStarted(){
-    if(demo.on) stopDemo();
+    stopDemo();
     state.live = true;
     clearHistory();
     resetSegFrame();
@@ -3248,8 +3261,7 @@ void main(){
   // proporção escolhida (em pé vira 9:16, 3:4) ou a do próprio vídeo, com o
   // lado maior = workLong() × escala do desempenho; lados pares (vídeo)
   function workDims(){
-    const el = source.kind === 'demo' ? demo.canvas : null;
-    const vw = el ? el.width : video.videoWidth || 16, vh = el ? el.height : video.videoHeight || 9;
+    const vw = video.videoWidth || 16, vh = video.videoHeight || 9;
     let asp = vw/vh;
     const a = ASPECTS[state.view.aspect];
     if(a) asp = vw >= vh ? a : 1/a;
@@ -3284,22 +3296,18 @@ void main(){
 
   // o quadro do vídeo no canvas de trabalho: recorte central na proporção do
   // quadro, menor ainda com o zoom digital; a frontal sai espelhada
-  function drawSourceFrame(now){
-    const isDemo = source.kind === 'demo';
-    if(isDemo) drawDemo(now);
-    const el = isDemo ? demo.canvas : video;
-    const vw = isDemo ? el.width : video.videoWidth, vh = isDemo ? el.height : video.videoHeight;
-    if(!vw || !vh || (!isDemo && video.readyState < 2)) return false;
+  function drawSourceFrame(){
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if(!vw || !vh || video.readyState < 2) return false;
     if(workDims().w !== RW || workDims().h !== RH) resizeWork(); // girou o celular
     const W = RW, H = RH, asp = W/H;
     let sw = vw, sh = vw/asp;
     if(sh > vh){ sh = vh; sw = vh*asp; }
     const z = source.hwZoom ? 1 : state.view.zoom;
     sw /= z; sh /= z;
-    if(isDemo) demoBoxes((vw - sw)/2, (vh - sh)/2, sw, sh);
     sctx.save();
     if(source.mirror){ sctx.translate(W, 0); sctx.scale(-1, 1); }
-    sctx.drawImage(el, (vw - sw)/2, (vh - sh)/2, sw, sh, 0, 0, W, H);
+    sctx.drawImage(video, (vw - sw)/2, (vh - sh)/2, sw, sh, 0, 0, W, H);
     sctx.restore();
     return true;
   }
@@ -3356,8 +3364,8 @@ void main(){
     if(now - lastTick < 1000/30 - 4) return;
     if(lastTick && now - lastTick < 500) perfTick(now - lastTick, now);
     lastTick = now;
-    if(drawSourceFrame(now)){
-      if(segRun.model && !demo.on) segStep(now);
+    if(drawSourceFrame()){
+      if(segRun.model) segStep(now);
       uploadSource(srcCanvas);
       render();
     }
@@ -3435,7 +3443,7 @@ void main(){
   }, { passive:false });
   // setas do teclado também trocam o look (desktop)
   window.addEventListener('keydown', e=>{
-    if(!state.live || demo.on || (e.target.closest && e.target.closest('input, textarea, select, button, [contenteditable]'))) return;
+    if(!state.live || (e.target.closest && e.target.closest('input, textarea, select, button, [contenteditable]'))) return;
     if(e.key === 'ArrowRight') stepLook(1);
     else if(e.key === 'ArrowLeft') stepLook(-1);
   });
@@ -3799,126 +3807,16 @@ void main(){
 
   /* ---------------------------------------------------------------------
      DEMONSTRAÇÃO NA TELA DE ABERTURA
-     Uma rua à noite desenhada aqui mesmo (prédios, janelas, poste, pessoas
-     andando) passa pelo pipeline térmico com o OSD de mira, atrás da tela
-     de abertura. As caixas da mira vêm da posição conhecida de cada figura.
-     Os ajustes do usuário (look, OSD) voltam como estavam ao sair.
+     Um vídeo curto já processado no look térmico toca em loop atrás da tela
+     de abertura (pausado quando ela some). Com movimento reduzido, fica só
+     o primeiro quadro.
   --------------------------------------------------------------------- */
-  const demo = { on:false, canvas:document.createElement('canvas'), saved:null, people:[], city:[], boxes:[], last:0 };
-  const demoCtx = demo.canvas.getContext('2d');
-  const rnd = (a, b)=>a + Math.random()*(b - a);
-  function buildDemoScene(){
-    const W = demo.canvas.width, H = demo.canvas.height;
-    // prédios com janelas (algumas acesas, que esquentam no térmico)
-    demo.city = [];
-    for(let x = -10; x < W; ){
-      const w = rnd(W*0.12, W*0.26), h = rnd(H*0.22, H*0.5), wins = [];
-      const cols = Math.max(2, Math.floor(w/22)), rows = Math.max(3, Math.floor(h/26));
-      for(let r=0; r<rows; r++) for(let c=0; c<cols; c++) if(Math.random() < 0.16) wins.push([c/cols, r/rows, Math.random()]);
-      demo.city.push({ x, w, h, cols, rows, wins });
-      x += w + rnd(2, 14);
-    }
-    demo.people = [];
-    for(let i=0; i<4; i++){
-      const depth = rnd(0.45, 1);
-      demo.people.push({ x:rnd(0, 1), depth, dir:Math.random() < 0.5 ? -1 : 1, speed:rnd(0.035, 0.07), phase:rnd(0, 6) });
-    }
-    demo.people.sort((a, b)=>a.depth - b.depth);
-  }
-  function drawPerson(c, x, ground, h, phase){
-    const sw = Math.sin(phase), hipY = ground - h*0.47, shY = ground - h*0.8;
-    c.lineCap = 'round';
-    // pernas e braços balançando em oposição
-    c.strokeStyle = '#86624f'; c.lineWidth = h*0.11;
-    for(const s of [1, -1]){
-      const a = s*sw*0.42;
-      c.beginPath(); c.moveTo(x, hipY); c.lineTo(x + Math.sin(a)*h*0.46, hipY + Math.cos(a)*h*0.46); c.stroke();
-    }
-    c.fillStyle = '#b8806a';
-    c.beginPath(); c.roundRect(x - h*0.13, shY, h*0.26, hipY - shY + h*0.05, h*0.08); c.fill();
-    c.strokeStyle = '#c9946f'; c.lineWidth = h*0.075;
-    for(const s of [1, -1]){
-      const a = -s*sw*0.5;
-      const ax = x + s*h*0.11;
-      c.beginPath(); c.moveTo(ax, shY + h*0.04); c.lineTo(ax + Math.sin(a)*h*0.32, shY + h*0.04 + Math.cos(a)*h*0.32); c.stroke();
-    }
-    // cabeça: a parte mais quente
-    c.fillStyle = '#ffd6b0';
-    c.beginPath(); c.ellipse(x, shY - h*0.08, h*0.068, h*0.082, 0, 0, Math.PI*2); c.fill();
-  }
-  function drawDemo(now){
-    const c = demoCtx, W = demo.canvas.width, H = demo.canvas.height;
-    const dt = demo.last ? Math.min(0.1, (now - demo.last)/1000) : 0;
-    demo.last = now;
-    const horizon = H*0.64;
-    let g = c.createLinearGradient(0, 0, 0, horizon);
-    g.addColorStop(0, '#04060a'); g.addColorStop(1, '#18202a');
-    c.fillStyle = g; c.fillRect(0, 0, W, horizon);
-    demo.city.forEach(b=>{
-      c.fillStyle = '#10151c';
-      c.fillRect(b.x, horizon - b.h, b.w, b.h);
-      b.wins.forEach(([u, v, k])=>{
-        // uma ou outra janela pisca devagar
-        const lit = k > 0.15 || Math.sin(now/900 + k*40) > 0;
-        if(!lit) return;
-        c.fillStyle = k > 0.85 ? '#d8b06a' : k > 0.5 ? '#7a6040' : '#4e4232';
-        c.fillRect(b.x + u*b.w + 4, horizon - b.h + v*b.h + 5, b.w/b.cols - 8, b.h/b.rows - 10);
-      });
-    });
-    g = c.createLinearGradient(0, horizon, 0, H);
-    g.addColorStop(0, '#262b31'); g.addColorStop(1, '#3a3f45');
-    c.fillStyle = g; c.fillRect(0, horizon, W, H - horizon);
-    // poste: a lâmpada estoura no bloom
-    const px = W*0.78;
-    c.fillStyle = '#1a1e24'; c.fillRect(px - 3, horizon - H*0.42, 6, H*0.42 + H*0.06);
-    c.fillStyle = '#fffbe8'; c.beginPath(); c.arc(px, horizon - H*0.42, H*0.018, 0, Math.PI*2); c.fill();
-    const boxes = [];
-    demo.people.forEach((p, i)=>{
-      p.x += p.dir*p.speed*dt;
-      if(p.x > 1.12) p.x = -0.12; else if(p.x < -0.12) p.x = 1.12;
-      p.phase += dt*7*p.speed/0.05;
-      const h = H*0.36*p.depth, ground = horizon + (H - horizon)*(p.depth - 0.4)*1.4, x = p.x*W;
-      drawPerson(c, x, ground, h, p.phase);
-      boxes.push({ x0:x - h*0.24, y0:ground - h*0.98, x1:x + h*0.24, y1:ground, k:i });
-    });
-    // em px da cena; demoBoxes leva pro recorte do quadro
-    demo.boxes = boxes;
-  }
+  const demoVideo = $('demoVideo');
   function startDemo(){
-    if(demo.on || state.live || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const portrait = innerHeight > innerWidth;
-    demo.canvas.width = portrait ? 540 : 960;
-    demo.canvas.height = portrait ? 960 : 540;
-    buildDemoScene();
-    demo.saved = { look:state.look, template:state.osd.template };
-    if(state.look !== 'thermal') switchLook('thermal', true);
-    state.osd.template = 'ircam';
-    demo.on = true;
-    demo.last = 0;
-    source.kind = 'demo';
-    source.mirror = false;
-    state.live = true;
-    stats.seeded = false;
-    resizeWork();
-    startLoop();
+    if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    demoVideo.play().catch(()=>{ /* sem autoplay: fica o pôster */ });
   }
-  // caixas da cena no recorte do quadro (0–1); a mira só nos três mais
-  // perto, como a detecção de verdade faria
-  function demoBoxes(sx, sy, sw, sh){
-    det.persons = demo.boxes
-      .map(b=>({ x0:(b.x0 - sx)/sw, y0:(b.y0 - sy)/sh, x1:(b.x1 - sx)/sw, y1:(b.y1 - sy)/sh, k:b.k }))
-      .filter(b=>b.x0 > 0 && b.x1 < 1)
-      .sort((a, b)=>(b.y1 - b.y0) - (a.y1 - a.y0)).slice(0, 3);
-  }
-  function stopDemo(){
-    if(!demo.on) return;
-    demo.on = false;
-    state.live = false;
-    source.kind = null;
-    clearDetections();
-    state.osd.template = demo.saved.template;
-    if(state.look !== demo.saved.look) switchLook(demo.saved.look, true);
-  }
+  function stopDemo(){ demoVideo.pause(); }
 
   /* ---------------------------------------------------------------------
      APP INSTALÁVEL (PWA)
@@ -4174,8 +4072,7 @@ void main(){
   paletteChanged();
   // a escala usa Geist Mono no canvas: redesenha quando a fonte chegar
   document.fonts.load('500 20px "Geist Mono"').then(()=>{ if(state.scale.show) requestRender(); }).catch(()=>{});
-  // a tela de abertura começa com a demonstração rodando atrás
-  loadOsdFont();
+  // a tela de abertura começa com a demonstração tocando atrás
   startDemo();
 })();
 </script>

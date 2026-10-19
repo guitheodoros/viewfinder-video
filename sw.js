@@ -1,8 +1,8 @@
 // Viewfinder Video: guarda a página, as fontes e o motor/modelos da IA pra
 // o app abrir sem internet depois do primeiro uso. Trocar VERSION limpa o
 // cache antigo.
-const VERSION = 'vfv-1';
-const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
+const VERSION = 'vfv-2';
+const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './media/demo.mp4', './media/demo-poster.jpg'];
 
 self.addEventListener('install', e=>{
   e.waitUntil(caches.open(VERSION).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()));
