@@ -3484,10 +3484,12 @@ void main(){
   // parou antes do fim (cancelou ou saiu do app), o arquivo não é entregue
   const rec = { active:false, exporting:false, discard:false, recorder:null, chunks:[], startedAt:0, canvas:null, ctx:null, wake:null };
   const btnRec = $('btnRec'), recTimer = $('recTimer'), btnSound = $('btnSound');
-  // MP4 quando o navegador grava (Safari, Chrome recente); senão WebM
+  // MP4 quando o navegador grava (Safari, Chrome recente); senão WebM. H.264
+  // High primeiro: o Baseline (42E01E) desmancha o grão em blocos de 16 px
   const REC_TYPES = [
-    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-    'video/mp4;codecs=avc1,mp4a',
+    'video/mp4;codecs=avc1.640033,mp4a.40.2',
+    'video/mp4;codecs=avc1.640028,mp4a.40.2',
+    'video/mp4;codecs=avc1.4D0028,mp4a.40.2',
     'video/mp4',
     'video/webm;codecs=vp9,opus',
     'video/webm;codecs=vp8,opus',
@@ -3556,7 +3558,8 @@ void main(){
     }
     let recorder;
     try {
-      const opts = { videoBitsPerSecond:state.rec.res === 1080 ? 12e6 : 6e6, audioBitsPerSecond:128000 };
+      // taxa alta de propósito: o grão animado muda todo quadro e come bits
+      const opts = { videoBitsPerSecond:state.rec.res === 1080 ? 25e6 : 14e6, audioBitsPerSecond:160000 };
       if(mime) opts.mimeType = mime;
       recorder = new MediaRecorder(stream, opts);
     } catch(err){ console.error(err); showToast('não foi possível gravar'); rec.exporting = false; return false; }
