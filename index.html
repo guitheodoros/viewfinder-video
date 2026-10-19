@@ -213,6 +213,7 @@
     padding:8px 14px; border-radius:999px; background:rgba(0,0,0,.55); color:#fff;
     font-size:12px; font-weight:500; letter-spacing:.6px; text-transform:uppercase;
     pointer-events:none; opacity:0; transition:opacity .25s;
+    max-width:calc(100% - 32px); text-align:center; line-height:1.4;
   }
   .toast.show{ opacity:1; transition:none; }
 
@@ -3632,10 +3633,19 @@ void main(){
     if(video.currentTime > 0.05){
       await new Promise(res=>{ video.addEventListener('seeked', res, { once:true }); video.currentTime = 0; });
     }
+    // o som do arquivo passa pelo AudioContext antes de tocar (no Safari ligar
+    // isso com o vídeo andando congela a imagem por ~1 s) e a gravação só
+    // começa quando o vídeo já está tocando de verdade
+    if(state.rec.sound) fileAudioTrack();
+    try { await video.play(); }
+    catch(err){ console.error(err); video.loop = true; showToast('não foi possível tocar o vídeo'); return; }
+    await new Promise(res=>{
+      const t = setTimeout(res, 1000);
+      if(video.requestVideoFrameCallback) video.requestVideoFrameCallback(()=>{ clearTimeout(t); res(); });
+      else video.addEventListener('playing', ()=>{ clearTimeout(t); res(); }, { once:true });
+    });
     if(!startRecording(true)){ video.loop = true; return; }
     video.addEventListener('ended', exportEnded);
-    try { await video.play(); }
-    catch(err){ console.error(err); showToast('não foi possível tocar o vídeo'); stopRecording(true); }
   }
   /* ---------------------------------------------------------------------
      EXPORTAÇÃO QUADRO A QUADRO (arquivo carregado)
@@ -3707,11 +3717,11 @@ void main(){
   function seekTo(t){
     return new Promise(resolve=>{
       let done = false;
-      const finish = ()=>{ if(done) return; done = true; clearTimeout(timer); clearInterval(poll); resolve(); };
-      const timer = setTimeout(finish, 1500);
+      const finish = late=>{ if(done) return; done = true; clearTimeout(timer); clearInterval(poll); resolve(late === true); };
+      const timer = setTimeout(()=>finish(true), 1500);
       // além do evento, confere se a busca já terminou (já estava no lugar)
-      const poll = setInterval(()=>{ if(!video.seeking && video.readyState >= 2 && Math.abs(video.currentTime - t) < 0.02) finish(); }, 50);
-      video.addEventListener('seeked', finish, { once:true });
+      const poll = setInterval(()=>{ if(!video.seeking && video.readyState >= 2 && Math.abs(video.currentTime - t) < 0.02) finish(false); }, 50);
+      video.addEventListener('seeked', ()=>finish(false), { once:true });
       video.currentTime = t;
     });
   }
@@ -3761,28 +3771,33 @@ void main(){
       });
       if(abuf && acfg){ await encodeAudio(abuf, acfg, muxer); recTimer.textContent = 'exportando 0%'; }
       let encErr = null;
-      const enc = new VideoEncoder({ output:(chunk, meta)=>muxer.addVideoChunk(chunk, meta), error:e=>{ encErr = e; } });
-      enc.configure(vcfg);
+      const enc = new VideoEncoder({ output:(chunk, meta)=>muxer.addVideoChunk(chunk, meta), error:e=>{ encErr = Object.assign(e, { stage:'codificador: ' + (e.message || e.name) }); } });
+      try { enc.configure(vcfg); } catch(e){ throw Object.assign(e, { stage:'config ' + vcfg.codec }); }
+      let lateSeeks = 0;
       const total = Math.max(1, Math.floor(video.duration*FF_FPS));
       for(let i=0; i<total; i++){
         if(ff.cancel || !state.live) break;
         if(encErr) throw encErr;
         const t = i/FF_FPS;
-        await seekTo(t);
+        // o quadro não chega: o navegador não está decodificando nas buscas
+        lateSeeks = await seekTo(t) ? lateSeeks + 1 : 0;
+        if(lateSeeks >= 3) throw Object.assign(new Error('seek timeout'), { stage:'busca de quadro' });
         if(ff.cancel || !state.live) break;
         sceneClock.ms = t*1000;
         drawSourceFrame();
         if(segRun.model) segStep(nowMs());
         uploadSource(srcCanvas);
         render(); // desenha também o quadro da gravação (rec.canvas)
-        const frame = new VideoFrame(rec.canvas, { timestamp:Math.round(t*1e6), duration:Math.round(1e6/FF_FPS) });
+        let frame;
+        try { frame = new VideoFrame(rec.canvas, { timestamp:Math.round(t*1e6), duration:Math.round(1e6/FF_FPS) }); }
+        catch(e){ throw Object.assign(e, { stage:'quadro: ' + (e.message || e.name) }); }
         enc.encode(frame, { keyFrame:i % (FF_FPS*2) === 0 });
         frame.close();
         recTimer.textContent = `exportando ${Math.min(99, Math.floor((i + 1)/total*100))}%`;
         // não deixa a fila do codificador crescer (memória)
         const waitStart = performance.now();
         while(enc.encodeQueueSize > 3){
-          if(performance.now() - waitStart > 10000) throw Object.assign(new Error('timeout: vídeo'), { stage:'vídeo' });
+          if(performance.now() - waitStart > 10000) throw Object.assign(new Error('timeout: vídeo'), { stage:'codificador parado' });
           await new Promise(r=>setTimeout(r, 4));
         }
       }
@@ -3812,7 +3827,8 @@ void main(){
     // não deu quadro a quadro: tenta a exportação em tempo real
     if(failed && state.live && source.kind === 'file'){
       console.warn('exportação quadro a quadro falhou' + (failed.stage ? ' (' + failed.stage + ')' : ''), failed);
-      showToast('usando a exportação em tempo real');
+      // a etapa aparece no aviso pra dar pra saber onde o navegador falhou
+      showToast(`exportação rápida falhou (${failed.stage || failed.message || 'erro'}) · usando tempo real`, 6000);
       return startExport();
     }
     if(failed) showToast('não foi possível exportar');
@@ -3992,11 +4008,11 @@ void main(){
 
   const toast = $('toast');
   let toastTimer = 0;
-  function showToast(text){
+  function showToast(text, ms){
     toast.textContent = text;
     toast.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(()=>toast.classList.remove('show'), 700);
+    toastTimer = setTimeout(()=>toast.classList.remove('show'), ms || 700);
   }
 
   /* ---------------------------------------------------------------------
