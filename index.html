@@ -2174,6 +2174,11 @@ void main(){
     return { persons, faces, clothes:d.clothes.map(m).filter(Boolean), thumb: faces.length && faces[0].orig === d.faces[0] ? d.thumb : null };
   }
   const NO_DET = { persons:[], faces:[], clothes:[], thumb:null };
+  // relógio da cena: o tempo real, ou o tempo do vídeo durante a exportação
+  // quadro a quadro (aí o OSD, o atraso da grade e o tracking seguem o vídeo)
+  const sceneClock = { ms:null, wall0:0 };
+  const nowMs = ()=>sceneClock.ms != null ? sceneClock.ms : performance.now();
+  const nowDate = ()=>new Date(sceneClock.ms != null ? sceneClock.wall0 + sceneClock.ms : Date.now());
 
   // cell = { idx, crop, zoom, nosignal } na grade; sem cell = quadro único
   function drawOSD(ctx, w, h, cell){
@@ -2183,13 +2188,13 @@ void main(){
     // tape = contador do timecode
     const o = { ctx, w, h, u:(cell ? cell.osdLong : Math.max(w, h))/100*state.osd.size/100, col:state.osd.color, temps:sceneTempsC(),
       idx:0, zoomPct:zoomFraction()*100, nosignal:false, det,
-      live:state.osd.live, now:new Date(), t:performance.now()/1000, tape:tapeSeconds(), recording:rec.active };
+      live:state.osd.live, now:nowDate(), t:nowMs()/1000, tape:tapeSeconds(), recording:rec.active };
     if(cell){
       o.idx = cell.idx; o.zoomPct = Math.min(100, (cell.zoom - 1)/5*100); o.nosignal = cell.nosignal;
       // quadro atrasado: as caixas daquele instante e o relógio atrasado junto
       const past = cell.past;
       o.det = cell.nosignal ? NO_DET : mapDetections(cell.crop, past ? past.det : det);
-      if(past){ const ago = (performance.now() - past.t)/1000; o.now = new Date(Date.now() - ago*1000); o.tape = Math.max(0, o.tape - ago); }
+      if(past){ const ago = (nowMs() - past.t)/1000; o.now = new Date(o.now.getTime() - ago*1000); o.tape = Math.max(0, o.tape - ago); }
     }
     ctx.save();
     draw(o);
@@ -2304,7 +2309,7 @@ void main(){
   function pastFrame(delay){
     const fr = hist.frames;
     if(!fr.length) return null;
-    const target = performance.now() - delay*1000;
+    const target = nowMs() - delay*1000;
     for(let i=fr.length - 1; i>=0; i--) if(fr[i].t <= target) return fr[i];
     return fr[0];
   }
@@ -2376,7 +2381,7 @@ void main(){
     frameNo++;
     grainSeed[0] = Math.floor(Math.random()*4096); grainSeed[1] = Math.floor(Math.random()*4096);
     const sd = renderAll(frameNo % STATS_EVERY !== 1);
-    pushHistory(performance.now());
+    pushHistory(nowMs());
     syncSceneTemps();
     drawOverlay(octx, RW, RH, true);
     if(rec.active) drawRecFrame();
@@ -3081,12 +3086,13 @@ void main(){
   --------------------------------------------------------------------- */
   // kind: 'camera' | 'file'; hwZoom = faixa do zoom da própria câmera, se o
   // navegador expõe (no iPhone quase nunca: aí o zoom é digital)
-  const source = { kind:null, stream:null, track:null, url:null, facing:'environment', mirror:false, hwZoom:null, startedAt:0, cams:0 };
+  const source = { kind:null, stream:null, track:null, url:null, file:null, facing:'environment', mirror:false, hwZoom:null, startedAt:0, cams:0 };
   try { const f = localStorage.getItem('viewfinder-video-facing'); if(f === 'user' || f === 'environment') source.facing = f; } catch(e){}
 
   // sem processamento de voz: o som ambiente sai como o microfone ouve
   const MIC = { echoCancellation:false, noiseSuppression:false, autoGainControl:false };
   function stopSource(){
+    if(rec.ff) rec.ff.cancel = true;
     if(rec.active) stopRecording(rec.exporting);
     state.live = false;
     if(source.stream){ source.stream.getTracks().forEach(t=>t.stop()); source.stream = null; source.track = null; }
@@ -3095,6 +3101,7 @@ void main(){
     video.removeAttribute('src');
     video.load();
     if(source.url){ URL.revokeObjectURL(source.url); source.url = null; }
+    source.file = null;
     source.kind = null; source.hwZoom = null;
   }
   // primeiro quadro decodificado (videoWidth > 0) ou erro
@@ -3149,6 +3156,7 @@ void main(){
     stopSource();
     source.kind = 'file';
     source.url = URL.createObjectURL(file);
+    source.file = file; // a exportação quadro a quadro relê o som do arquivo
     source.mirror = false;
     video.src = source.url;
     video.muted = !state.rec.sound;
@@ -3354,6 +3362,7 @@ void main(){
   function loop(now){
     if(!state.live){ loopOn = false; return; }
     requestAnimationFrame(loop);
+    if(rec.ff) return; // a exportação quadro a quadro desenha por conta própria
     if(now - lastTick < 1000/30 - 4) return;
     if(lastTick && now - lastTick < 500) perfTick(now - lastTick, now);
     lastTick = now;
@@ -3482,7 +3491,8 @@ void main(){
   --------------------------------------------------------------------- */
   // exporting = gravando um arquivo carregado do começo ao fim; discard =
   // parou antes do fim (cancelou ou saiu do app), o arquivo não é entregue
-  const rec = { active:false, exporting:false, discard:false, recorder:null, chunks:[], startedAt:0, canvas:null, ctx:null, wake:null };
+  // ff = exportação quadro a quadro em andamento ({ cancel })
+  const rec = { active:false, exporting:false, ff:null, recorder:null, chunks:[], startedAt:0, canvas:null, ctx:null, wake:null };
   const btnRec = $('btnRec'), recTimer = $('recTimer'), btnSound = $('btnSound');
   // MP4 quando o navegador grava (Safari, Chrome recente); senão WebM. H.264
   // High primeiro: o Baseline (42E01E) desmancha o grão em blocos de 16 px
@@ -3593,7 +3603,7 @@ void main(){
   }
   // discard: a exportação não chegou ao fim, o arquivo não é entregue
   function stopRecording(discard){
-    if(!rec.active) return;
+    if(!rec.active || rec.ff) return;
     rec.active = false;
     if(rec.exporting){
       rec.exporting = false;
@@ -3627,15 +3637,181 @@ void main(){
     try { await video.play(); }
     catch(err){ console.error(err); showToast('não foi possível tocar o vídeo'); stopRecording(true); }
   }
+  /* ---------------------------------------------------------------------
+     EXPORTAÇÃO QUADRO A QUADRO (arquivo carregado)
+     Em vez de gravar o vídeo tocando, o app vai a cada quadro (30 por
+     segundo de vídeo), renderiza em qualidade máxima e codifica ele mesmo
+     com o WebCodecs: H.264 High na taxa escolhida aqui, sem depender do
+     gravador do navegador e sem perder quadro. O som do arquivo é
+     decodificado e recodificado em AAC. Sem WebCodecs (ou sem codificar
+     o som, quando ele está ligado), cai na exportação em tempo real.
+  --------------------------------------------------------------------- */
+  const FF_FPS = 30;
+  const MUXER_URL = 'https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.mjs';
+  let muxerPromise = null;
+  function loadMuxer(){
+    if(!muxerPromise){ muxerPromise = import(MUXER_URL); muxerPromise.catch(()=>{ muxerPromise = null; }); }
+    return muxerPromise;
+  }
+  // H.264 nível 4.0 (até 1080p a 30): High, senão Main, senão Baseline
+  async function pickVideoConfig(w, h){
+    const bitrate = state.rec.res === 1080 ? 20e6 : 12e6;
+    for(const codec of ['avc1.640028', 'avc1.4D0028', 'avc1.42E028']){
+      const cfg = { codec, width:w, height:h, bitrate, framerate:FF_FPS, latencyMode:'quality', avc:{ format:'avc' } };
+      try { if((await VideoEncoder.isConfigSupported(cfg)).supported) return cfg; } catch(e){}
+    }
+    return null;
+  }
+  // som do arquivo inteiro já decodificado (null = arquivo sem som)
+  async function decodeFileAudio(file){
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return null;
+    const ctx = new AC();
+    try { return await ctx.decodeAudioData(await file.arrayBuffer()); }
+    catch(e){ return null; }
+    finally { ctx.close && ctx.close(); }
+  }
+  async function pickAudioConfig(buf){
+    if(!window.AudioEncoder) return null;
+    const cfg = { codec:'mp4a.40.2', sampleRate:buf.sampleRate, numberOfChannels:Math.min(2, buf.numberOfChannels), bitrate:160000 };
+    try { return (await AudioEncoder.isConfigSupported(cfg)).supported ? cfg : null; } catch(e){ return null; }
+  }
+  async function encodeAudio(buf, cfg, muxer){
+    let err = null;
+    const enc = new AudioEncoder({ output:(chunk, meta)=>muxer.addAudioChunk(chunk, meta), error:e=>{ err = e; } });
+    enc.configure(cfg);
+    const ch = cfg.numberOfChannels, sr = buf.sampleRate, CH = 4096;
+    const planes = Array.from({ length:ch }, (_, c)=>buf.getChannelData(c));
+    for(let off=0; off<buf.length; off+=CH){
+      const n = Math.min(CH, buf.length - off), data = new Float32Array(n*ch);
+      for(let c=0; c<ch; c++) data.set(planes[c].subarray(off, off + n), c*n);
+      const ad = new AudioData({ format:'f32-planar', sampleRate:sr, numberOfFrames:n, numberOfChannels:ch, timestamp:Math.round(off/sr*1e6), data });
+      enc.encode(ad);
+      ad.close();
+      if(err) throw err;
+    }
+    await enc.flush();
+    enc.close();
+    if(err) throw err;
+  }
+  // posiciona o vídeo; no "seeked" o quadro já está pronto pra desenhar
+  // (o tempo-limite evita travar se o vídeo sumir no meio)
+  function seekTo(t){
+    return new Promise(resolve=>{
+      const timer = setTimeout(resolve, 3000);
+      video.addEventListener('seeked', ()=>{ clearTimeout(timer); resolve(); }, { once:true });
+      video.currentTime = t;
+    });
+  }
+  async function exportFrames(){
+    if(!window.VideoEncoder || !window.VideoFrame || !source.file) return startExport();
+    const { w, h } = recDims();
+    let Mp4, vcfg;
+    try { [Mp4, vcfg] = await Promise.all([loadMuxer(), pickVideoConfig(w, h)]); }
+    catch(e){ console.error(e); }
+    if(!Mp4 || !vcfg) return startExport();
+    let abuf = null, acfg = null;
+    if(state.rec.sound){
+      abuf = await decodeFileAudio(source.file);
+      if(abuf){ acfg = await pickAudioConfig(abuf); if(!acfg) return startExport(); }
+    }
+
+    const ff = rec.ff = { cancel:false };
+    const wasPaused = video.paused;
+    video.pause();
+    // desempenho no máximo: não precisa segurar 30 fps
+    const savedPerf = { step:perf.step, scale:perf.scale };
+    perf.step = 0; perf.scale = 1;
+    resizeWork();
+    rec.canvas = document.createElement('canvas');
+    rec.canvas.width = w; rec.canvas.height = h;
+    rec.ctx = rec.canvas.getContext('2d');
+    rec.active = rec.exporting = true;
+    btnRec.setAttribute('aria-pressed', 'true');
+    btnRec.setAttribute('aria-label', 'Cancelar exportação');
+    recTimer.textContent = 'exportando 0%';
+    recTimer.classList.add('exporting');
+    recTimer.hidden = false;
+    btnSound.disabled = scrub.disabled = btnPlay.disabled = true;
+    keepAwake(true);
+    // o relógio da cena (OSD, atraso da grade, tracking) passa a ser o do vídeo
+    sceneClock.wall0 = Date.now();
+    clearHistory(); resetTracks(); segRun.prev = null;
+
+    let blob = null, failed = null;
+    try {
+      const muxer = new Mp4.Muxer({
+        target:new Mp4.ArrayBufferTarget(),
+        video:{ codec:'avc', width:w, height:h, frameRate:FF_FPS },
+        audio:acfg ? { codec:'aac', sampleRate:acfg.sampleRate, numberOfChannels:acfg.numberOfChannels } : undefined,
+        fastStart:'in-memory',
+        firstTimestampBehavior:'offset',
+      });
+      if(abuf && acfg) await encodeAudio(abuf, acfg, muxer);
+      let encErr = null;
+      const enc = new VideoEncoder({ output:(chunk, meta)=>muxer.addVideoChunk(chunk, meta), error:e=>{ encErr = e; } });
+      enc.configure(vcfg);
+      const total = Math.max(1, Math.floor(video.duration*FF_FPS));
+      for(let i=0; i<total; i++){
+        if(ff.cancel || !state.live) break;
+        if(encErr) throw encErr;
+        const t = i/FF_FPS;
+        await seekTo(t);
+        if(ff.cancel || !state.live) break;
+        sceneClock.ms = t*1000;
+        drawSourceFrame();
+        if(segRun.model) segStep(nowMs());
+        uploadSource(srcCanvas);
+        render(); // desenha também o quadro da gravação (rec.canvas)
+        const frame = new VideoFrame(rec.canvas, { timestamp:Math.round(t*1e6), duration:Math.round(1e6/FF_FPS) });
+        enc.encode(frame, { keyFrame:i % (FF_FPS*2) === 0 });
+        frame.close();
+        recTimer.textContent = `exportando ${Math.min(99, Math.floor((i + 1)/total*100))}%`;
+        // não deixa a fila do codificador crescer (memória)
+        while(enc.encodeQueueSize > 3) await new Promise(r=>setTimeout(r, 4));
+      }
+      if(!ff.cancel && state.live){
+        await enc.flush();
+        if(encErr) throw encErr;
+        muxer.finalize();
+        blob = new Blob([muxer.target.buffer], { type:'video/mp4' });
+      }
+      enc.close();
+    } catch(err){ console.error(err); failed = err; }
+
+    // volta tudo como estava
+    sceneClock.ms = null;
+    clearHistory(); resetTracks(); segRun.prev = null;
+    rec.ff = null;
+    rec.active = rec.exporting = false;
+    perf.step = savedPerf.step; perf.scale = savedPerf.scale;
+    if(state.live) resizeWork();
+    btnRec.setAttribute('aria-pressed', 'false');
+    recTimer.hidden = true;
+    recTimer.classList.remove('exporting');
+    btnSound.disabled = scrub.disabled = btnPlay.disabled = false;
+    keepAwake(false);
+    syncHud();
+    if(state.live && source.kind === 'file' && !wasPaused) video.play().catch(()=>{});
+    if(failed) showToast('não foi possível exportar');
+    else if(ff.cancel) showToast('exportação cancelada');
+    else if(blob) deliver(blob, `viewfinder-video-${fileStamp()}.mp4`, 'video');
+  }
+
   btnRec.addEventListener('click', ()=>{
     if(!state.live) return;
-    if(rec.active) stopRecording(rec.exporting);
-    else if(source.kind === 'file') startExport();
+    if(rec.ff) rec.ff.cancel = true;
+    else if(rec.active) stopRecording(rec.exporting);
+    else if(source.kind === 'file') exportFrames();
     else startRecording(false);
   });
   // saiu do app no meio: a gravação fecha com o que já tem; a exportação
   // (incompleta) é cancelada
-  document.addEventListener('visibilitychange', ()=>{ if(document.hidden && rec.active) stopRecording(rec.exporting); });
+  document.addEventListener('visibilitychange', ()=>{
+    if(!document.hidden) return;
+    if(rec.ff) rec.ff.cancel = true;
+    else if(rec.active) stopRecording(rec.exporting);
+  });
   // tela acesa enquanto grava
   async function keepAwake(on){
     try {
