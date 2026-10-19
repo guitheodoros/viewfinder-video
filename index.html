@@ -796,8 +796,7 @@
       <p class="hint">a interface do aparelho por cima da imagem. com o relógio ao vivo, data e hora seguem o relógio de verdade e o timecode corre junto com o vídeo; os outros textos são editáveis.</p>
     </details>
 
-    <!-- etapa 4: grade com recortes e atraso -->
-    <details class="panel" name="painel" id="panelGrid" hidden>
+    <details class="panel" name="painel" id="panelGrid">
       <summary><h2>Grade</h2></summary>
       <div class="row"><label for="gridLayout">layout</label>
         <select id="gridLayout">
@@ -809,6 +808,7 @@
         </select>
       </div>
       <div id="gridControls" style="display:none;">
+        <div class="row"><label for="gridDelay">atraso máximo</label><input type="range" id="gridDelay" autocomplete="off" min="0" max="50"><span class="val" id="gridDelayVal"></span></div>
         <div class="row"><label for="gridGap">fio</label><input type="range" id="gridGap" autocomplete="off" min="0" max="30"><span class="val" id="gridGapVal"></span></div>
         <div class="row"><label for="gridGapColor">cor do fio</label><input type="color" id="gridGapColor" aria-label="Cor do fio"></div>
         <div class="row"><label for="gridNoSignal">sem sinal</label><input type="text" id="gridNoSignal" autocomplete="off" spellcheck="false"></div>
@@ -825,7 +825,7 @@
         <div class="row"><label for="cellX">posição x</label><input type="range" id="cellX" autocomplete="off" min="0" max="100"><span class="val" id="cellXVal"></span></div>
         <div class="row"><label for="cellY">posição y</label><input type="range" id="cellY" autocomplete="off" min="0" max="100"><span class="val" id="cellYVal"></span></div>
       </div>
-      <p class="hint">cada quadro mostra um enquadramento da mesma imagem, com o próprio OSD (câmera, timecode e zoom mudam de quadro pra quadro). o enquadramento automático mira nos rostos e pessoas detectados pela IA.</p>
+      <p class="hint">cada quadro mostra um enquadramento da mesma cena, com o próprio OSD. o quadro 1 é ao vivo; os outros vêm atrasados, escalonados até o "atraso máximo", em 10 quadros por segundo como um gravador de cctv (e o relógio de cada um atrasa junto). os enquadramentos automáticos miram nas pessoas detectadas pela IA no momento em que o layout é escolhido.</p>
     </details>
 
     <footer>
@@ -915,7 +915,8 @@
     look: 'thermal',
     grade: null,
     // grade multicâmera: cada quadro é um enquadramento (centro x/y + zoom)
-    grid: { layout:'1x1', gap:6, gapColor:'#000000', noSignal:'No Signal', sel:0, auto:true, cells:[] },
+    // delay = atraso máximo em segundos (o último quadro); o 1º é ao vivo
+    grid: { layout:'1x1', gap:6, gapColor:'#000000', noSignal:'No Signal', sel:0, auto:true, delay:2, cells:[] },
   };
   // ajustes iniciais dos looks de vídeo (sensor e ruído são trocados junto)
   const LOOK_DEFAULTS = {
@@ -2124,14 +2125,15 @@ void main(){
     return out.join(':');
   }
   // caixas da imagem levadas pro espaço do quadro (crop em coordenadas 0–1)
-  function mapDetections(crop){
+  function mapDetections(crop, d){
+    d = d || det;
     const sw = crop.x1 - crop.x0, sh = crop.y1 - crop.y0;
     const m = b=>{
       const r = { x0:(b.x0 - crop.x0)/sw, y0:(b.y0 - crop.y0)/sh, x1:(b.x1 - crop.x0)/sw, y1:(b.y1 - crop.y0)/sh, k:b.k, orig:b };
       return r.x1 <= 0 || r.x0 >= 1 || r.y1 <= 0 || r.y0 >= 1 ? null : r;
     };
-    const persons = det.persons.map(m).filter(Boolean), faces = det.faces.map(m).filter(Boolean);
-    return { persons, faces, clothes:det.clothes.map(m).filter(Boolean), thumb: faces.length && faces[0].orig === det.faces[0] ? det.thumb : null };
+    const persons = d.persons.map(m).filter(Boolean), faces = d.faces.map(m).filter(Boolean);
+    return { persons, faces, clothes:d.clothes.map(m).filter(Boolean), thumb: faces.length && faces[0].orig === d.faces[0] ? d.thumb : null };
   }
   const NO_DET = { persons:[], faces:[], clothes:[], thumb:null };
 
@@ -2146,7 +2148,10 @@ void main(){
       live:state.osd.live, now:new Date(), t:performance.now()/1000, tape:tapeSeconds(), recording:rec.active };
     if(cell){
       o.idx = cell.idx; o.zoomPct = Math.min(100, (cell.zoom - 1)/5*100); o.nosignal = cell.nosignal;
-      o.det = cell.nosignal ? NO_DET : mapDetections(cell.crop);
+      // quadro atrasado: as caixas daquele instante e o relógio atrasado junto
+      const past = cell.past;
+      o.det = cell.nosignal ? NO_DET : mapDetections(cell.crop, past ? past.det : det);
+      if(past){ const ago = (performance.now() - past.t)/1000; o.now = new Date(Date.now() - ago*1000); o.tape = Math.max(0, o.tape - ago); }
     }
     ctx.save();
     draw(o);
@@ -2186,7 +2191,9 @@ void main(){
       const asp = cw/ch, zoom = Math.max(1, cell.zoom);
       const sw = Math.min(w, h*asp)/zoom, sh = sw/asp;
       const sx = Math.min(w - sw, Math.max(0, cell.x*w - sw/2)), sy = Math.min(h - sh, Math.max(0, cell.y*h - sh/2));
-      return { idx, x, y, w:cw, h:ch, zoom, nosignal:cell.mode === 'nosignal',
+      // atraso escalonado: o 1º ao vivo, o último no atraso máximo
+      const delay = L.cells.length > 1 ? state.grid.delay*idx/(L.cells.length - 1) : 0;
+      return { idx, x, y, w:cw, h:ch, zoom, nosignal:cell.mode === 'nosignal', past:delay > 0 ? pastFrame(delay) : null,
         src:{ sx, sy, sw, sh }, crop:{ x0:sx/w, y0:sy/h, x1:(sx + sw)/w, y1:(sy + sh)/h } };
     });
     // OSD do mesmo tamanho em todos os quadros, medido pelo menor (como o
@@ -2232,6 +2239,38 @@ void main(){
     return cells;
   }
 
+  /* Histórico dos quadros atrasados: cópias do glCanvas (lado maior ≤ 640
+     px) a 10 por segundo, com as caixas da IA do mesmo instante. Só existe
+     com a grade e algum atraso ligados; o tamanho acompanha o atraso máximo. */
+  const HIST_FPS = 10, HIST_LONG = 640;
+  const hist = { frames:[], pool:[], last:0 };
+  function clearHistory(){ hist.pool.push(...hist.frames.map(f=>f.canvas)); hist.frames = []; hist.last = 0; }
+  const copyBoxes = list=>list.map(b=>({ x0:b.x0, y0:b.y0, x1:b.x1, y1:b.y1, k:b.k }));
+  function pushHistory(now){
+    if(gridCount() < 2 || state.grid.delay <= 0){ if(hist.frames.length) clearHistory(); return; }
+    if(now - hist.last < 1000/HIST_FPS - 5) return;
+    hist.last = now;
+    const f = Math.min(1, HIST_LONG/Math.max(RW, RH));
+    const w = Math.max(1, Math.round(RW*f)), h = Math.max(1, Math.round(RH*f));
+    // reaproveita canvas do quadro mais velho (ou da reserva) em vez de criar um novo
+    const keep = Math.ceil(state.grid.delay*HIST_FPS) + 2;
+    let c = hist.frames.length >= keep ? hist.frames.shift().canvas : hist.pool.pop();
+    while(hist.frames.length >= keep) hist.pool.push(hist.frames.shift().canvas);
+    if(!c) c = document.createElement('canvas');
+    if(c.width !== w || c.height !== h){ c.width = w; c.height = h; }
+    const x = c.getContext('2d');
+    x.drawImage(glCanvas, 0, 0, w, h);
+    hist.frames.push({ canvas:c, t:now, det:{ persons:copyBoxes(det.persons), faces:copyBoxes(det.faces), clothes:copyBoxes(det.clothes), thumb:det.thumb } });
+  }
+  // o quadro guardado de "delay" segundos atrás (o mais velho, se ainda não há tanto)
+  function pastFrame(delay){
+    const fr = hist.frames;
+    if(!fr.length) return null;
+    const target = performance.now() - delay*1000;
+    for(let i=fr.length - 1; i>=0; i--) if(fr[i].t <= target) return fr[i];
+    return fr[0];
+  }
+
   // imagem (com grade) + OSD + escala. Em "baixa resolução" o OSD é
   // desenhado a 720 px e ampliado, como a interface de uma câmera de vídeo.
   function drawOverlay(ctx, w, h, clear){
@@ -2243,11 +2282,12 @@ void main(){
       ctx.fillRect(0, 0, w, h);
       ctx.imageSmoothingEnabled = !state.sensor.pixel;
       ctx.imageSmoothingQuality = 'high';
-      const kx = glCanvas.width/w, ky = glCanvas.height/h;
       cells.forEach(cell=>{
-        if(cell.nosignal) drawNoSignal(ctx, cell);
-        // a saída (gravação, foto) pode ter outro tamanho que o glCanvas
-        else ctx.drawImage(glCanvas, cell.src.sx*kx, cell.src.sy*ky, cell.src.sw*kx, cell.src.sh*ky, cell.x, cell.y, cell.w, cell.h);
+        if(cell.nosignal) return drawNoSignal(ctx, cell);
+        // a fonte (glCanvas ao vivo ou um quadro guardado) e a saída (preview,
+        // gravação, foto) têm tamanhos diferentes: o recorte vai em proporção
+        const img = cell.past ? cell.past.canvas : glCanvas, kx = img.width/w, ky = img.height/h;
+        ctx.drawImage(img, cell.src.sx*kx, cell.src.sy*ky, cell.src.sw*kx, cell.src.sh*ky, cell.x, cell.y, cell.w, cell.h);
       });
       ctx.restore();
     }
@@ -2298,6 +2338,7 @@ void main(){
     frameNo++;
     grainSeed[0] = Math.floor(Math.random()*4096); grainSeed[1] = Math.floor(Math.random()*4096);
     const sd = renderAll(frameNo % STATS_EVERY !== 1);
+    pushHistory(performance.now());
     syncSceneTemps();
     drawOverlay(octx, RW, RH, true);
     if(rec.active) drawRecFrame();
@@ -2969,6 +3010,7 @@ void main(){
     requestRender();
   });
   bindRange('gridGap', ()=>state.grid.gap, v=>state.grid.gap = v, v=>(v/10).toFixed(1) + '%');
+  bindRange('gridDelay', ()=>Math.round(state.grid.delay*10), v=>state.grid.delay = v/10, v=>v ? (v/10).toFixed(1).replace('.', ',') + ' s' : 'off');
   const gridGapColor = $('gridGapColor');
   gridGapColor.value = state.grid.gapColor;
   gridGapColor.addEventListener('input', ()=>{ state.grid.gapColor = gridGapColor.value; requestRender(); });
@@ -3087,6 +3129,7 @@ void main(){
   }
   function sourceStarted(){
     state.live = true;
+    clearHistory();
     resetSegFrame();
     stats.seeded = false;
     startScreen.hidden = true;
@@ -3176,6 +3219,7 @@ void main(){
     if(w !== RW || h !== RH){
       setOutputSize(w, h);
       srcCanvas.width = w; srcCanvas.height = h;
+      clearHistory(); // quadros guardados com outra proporção não servem mais
       buildCellMap();
     }
     fitFrame();
