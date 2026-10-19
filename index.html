@@ -138,9 +138,52 @@
   .look-chips button:hover{ color:#fff; }
   .look-chips button.active{ background:#fff; color:#000; }
   .look-chips button:focus-visible{ outline:2px solid #fff; outline-offset:1px; }
-  .ctrl-row{ display:flex; align-items:center; justify-content:space-between; width:100%; max-width:400px; }
-  /* lugar do botão de gravar/foto (etapa 2) */
-  .shutter-slot{ width:68px; height:68px; }
+  /* ajustes · foto · gravar · som · virar */
+  .ctrl-row{ display:grid; grid-template-columns:repeat(5, 1fr); justify-items:center; align-items:center; width:100%; max-width:420px; }
+  .ctrl-row .round-btn[hidden]{ display:grid; visibility:hidden; }
+  .round-btn:disabled{ opacity:.35; cursor:default; transform:none; }
+  .round-btn.off{ color:rgba(255,255,255,.55); }
+  /* botão de gravar: anel branco com o miolo vermelho, que vira quadrado gravando */
+  .rec-btn{
+    width:72px; height:72px; padding:0; border-radius:50%; cursor:pointer; flex:none;
+    background:transparent; border:4px solid #fff; display:grid; place-items:center;
+    transition:transform .1s;
+  }
+  .rec-btn::after{
+    content:""; width:54px; height:54px; border-radius:50%; background:#ff3b30;
+    transition:width .2s, height .2s, border-radius .2s;
+  }
+  .rec-btn[aria-pressed="true"]::after{ width:26px; height:26px; border-radius:5px; }
+  .rec-btn:active{ transform:scale(.94); }
+  .rec-btn:focus-visible{ outline:2px solid #fff; outline-offset:3px; }
+  /* tempo de gravação no topo */
+  .rec-timer{
+    display:flex; align-items:center; gap:6px; padding:5px 10px; border-radius:6px;
+    background:#ff3b30; color:#fff; font-family:"Geist Mono", ui-monospace, monospace; font-size:12px;
+    font-variant-numeric:tabular-nums; pointer-events:none;
+  }
+  .rec-timer[hidden]{ display:none; }
+  .rec-timer::before{ content:""; width:7px; height:7px; border-radius:50%; background:#fff; animation:blink 1s steps(1) infinite; }
+  @keyframes blink{ 50%{ opacity:0; } }
+  /* clarão da foto */
+  .flash{ position:absolute; inset:0; z-index:4; background:#fff; opacity:0; pointer-events:none; }
+  .flash.go{ animation:flash .35s ease-out; }
+  @keyframes flash{ from{ opacity:.85; } to{ opacity:0; } }
+  /* resultado (celular): prévia + salvar/compartilhar ou descartar */
+  #result{
+    position:absolute; inset:0; z-index:45; display:flex; align-items:flex-end; justify-content:center;
+    padding:16px 16px max(16px, env(safe-area-inset-bottom)); background:rgba(0,0,0,.6);
+  }
+  #result[hidden]{ display:none; }
+  .result-card{
+    width:100%; max-width:420px; display:flex; flex-direction:column; gap:12px; padding:12px;
+    background:var(--panel); color:var(--text); border:2px solid var(--border); border-radius:12px;
+  }
+  .result-media{ display:flex; justify-content:center; background:#000; border-radius:6px; overflow:hidden; }
+  .result-media video, .result-media img{ display:block; max-width:100%; max-height:52dvh; }
+  .result-info{ margin:0; font-size:11px; color:var(--muted); text-align:center; font-variant-numeric:tabular-nums; }
+  .result-actions{ display:flex; gap:8px; }
+  .result-actions .btn{ flex:1; padding:12px 10px; }
   .transport{
     display:flex; align-items:center; gap:10px; width:100%; max-width:520px;
     font-family:"Geist Mono", ui-monospace, monospace; font-size:11px; font-variant-numeric:tabular-nums;
@@ -219,6 +262,7 @@
   }
   @media (prefers-reduced-motion: reduce){
     #viewport, #sheet, #sheet[data-open="true"], .toast{ transition:none !important; }
+    .rec-timer::before, .flash.go{ animation:none !important; }
   }
   .panel{
     background:var(--panel);
@@ -496,8 +540,10 @@
       <button class="round-btn" id="btnHome" type="button" aria-label="Trocar fonte" title="Trocar fonte">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
       </button>
+      <span class="rec-timer" id="recTimer" role="timer" hidden>00:00:00</span>
       <span class="hud-status" id="statusLabel"></span>
     </div>
+    <div class="flash" id="flash"></div>
 
     <div class="hud hud-bottom">
       <div class="transport" id="transport" hidden>
@@ -517,7 +563,14 @@
         <button class="round-btn" id="btnSheet" type="button" aria-label="Ajustes" title="Ajustes" aria-expanded="false" aria-controls="sheet">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
         </button>
-        <div class="shutter-slot" aria-hidden="true"></div>
+        <button class="round-btn" id="btnPhoto" type="button" aria-label="Tirar foto" title="Tirar foto">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13.5" r="3.5"/></svg>
+        </button>
+        <button class="rec-btn" id="btnRec" type="button" aria-label="Gravar vídeo" aria-pressed="false"></button>
+        <button class="round-btn" id="btnSound" type="button" aria-label="Microfone ligado" title="Microfone ligado" aria-pressed="true">
+          <svg class="ico-on" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
+          <svg class="ico-off" viewBox="0 0 24 24" aria-hidden="true" style="display:none"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M4 4l16 16"/></svg>
+        </button>
         <button class="round-btn" id="btnFlip" type="button" aria-label="Virar câmera" title="Virar câmera" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9a8 8 0 0 1 14-3l2 2M20 15a8 8 0 0 1-14 3l-2-2"/><path d="M20 4v4h-4M4 20v-4h4"/></svg>
         </button>
@@ -552,6 +605,12 @@
           <button data-v="1:1">1:1</button>
         </div>
       </div>
+      <div class="row"><label>gravação</label>
+        <div class="toggle-group" id="recResGroup">
+          <button data-v="720" class="active">720p</button>
+          <button data-v="1080">1080p</button>
+        </div>
+      </div>
       <div class="row"><label>desempenho</label>
         <div class="toggle-group" id="perfGroup">
           <button data-v="auto" class="active">auto</button>
@@ -559,7 +618,7 @@
           <button data-v="smooth">fluidez</button>
         </div>
       </div>
-      <p class="hint">auto segue o vídeo: com o celular em pé fica vertical, deitado fica horizontal. 4:3 e 1:1 recortam o centro. no desempenho automático a resolução interna baixa sozinha quando o aparelho não segura 30 quadros por segundo.</p>
+      <p class="hint">auto segue o vídeo: com o celular em pé fica vertical, deitado fica horizontal. 4:3 e 1:1 recortam o centro. no desempenho automático a resolução interna baixa sozinha quando o aparelho não segura 30 quadros por segundo; o vídeo gravado sai sempre em 720p ou 1080p. a foto sai na resolução máxima da câmera.</p>
     </details>
 
     <details class="panel" name="painel" id="panelLook" style="display:none;">
@@ -778,6 +837,17 @@
     </div>
   </aside>
 
+  <div id="result" hidden>
+    <div class="result-card" role="dialog" aria-label="Captura">
+      <div class="result-media" id="resultMedia"></div>
+      <p class="result-info" id="resultInfo"></p>
+      <div class="result-actions">
+        <button class="btn" id="btnDiscard" type="button">descartar</button>
+        <button class="btn primary" id="btnShare" type="button">salvar / compartilhar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="start">
     <h1>Viewfinder Video</h1>
     <p class="lede">câmera térmica, cctv e camcorder ao vivo, direto no navegador.</p>
@@ -819,8 +889,9 @@
   // tamanho de referência do grão e das listras: definidos relativos a ele,
   // então qualquer resolução de trabalho sai com o mesmo aspecto
   const PREVIEW_LONG = 1200;
-  // lado maior da imagem de trabalho (720p); o desempenho automático reduz
-  const WORK_LONG = 1280;
+  // lado maior da imagem de trabalho = o da gravação (720p ou 1080p); o
+  // desempenho automático reduz a partir dele
+  const workLong = ()=>state.rec.res === 1080 ? 1920 : 1280;
 
   /* ---------------------------------------------------------------------
      STATE
@@ -830,6 +901,8 @@
     live: false,
     // quadro: proporção, desempenho e zoom (óptico quando o aparelho deixa)
     view: { aspect:'auto', perf:'auto', zoom:1 },
+    // gravação: resolução e som (microfone na câmera, som do arquivo)
+    rec: { res:720, sound:true },
     src: { red:0, skin:0, lights:0, invert:false },
     // temperaturas em °C; a régua calor↔°C é T_MIN_C..T_MIN_C+T_SPAN_C
     seg: { mode:'off', tFace:36.5, tBody:34.5, tCloth:29, tHair:27.5, tPerson:33, tBg:20, photo:35, bg:0, bgColor:'#2f3bd3', edge:50 },
@@ -2016,9 +2089,12 @@ void main(){
       c.fillRect(x + fs*0.12, y - fs*0.18, fs*0.7, fs*0.36);
       osdText(o, bumpNum(t.camBattery, o.idx), x + fs*1.45, y, fs, 'left', 'middle', o.col);
       osdText(o, t.camMode, W*0.45, y, fs, 'left', 'middle', o.col);
-      osdText(o, 'REC', W*0.56, y, fs, 'left', 'middle', '#ff3b2f');
-      // ao vivo o timecode corre a partir do valor digitado
-      const run = o.live ? Math.floor(o.elapsed) : 0;
+      // como num camcorder: STBY parado, REC vermelho gravando
+      if(o.recording || !o.live) osdText(o, 'REC', W*0.56, y, fs, 'left', 'middle', '#ff3b2f');
+      else osdText(o, 'STBY', W*0.56, y, fs, 'left', 'middle', o.col);
+      // ao vivo o timecode corre a partir do valor digitado: no arquivo segue a
+      // posição do vídeo; na câmera é contador de fita (só anda gravando)
+      const run = o.live ? Math.floor(o.tape) : 0;
       osdText(o, addSeconds(t.camTime, run + (o.idx ? (o.idx*97) % 300 : 0)), W - u*4.5, y, fs, 'right', 'middle', o.col);
       const y2 = y + fs*1.1, bx = x + fs*0.75, bw = fs*2.2, bh = fs*0.42;
       osdText(o, 'W', x, y2, fs*0.9, 'left', 'middle', o.col);
@@ -2064,10 +2140,10 @@ void main(){
     const draw = OSD_DRAW[state.osd.template];
     if(!draw) return;
     // live: relógio, timecode e piscas andando; t = segundos (pros piscas),
-    // elapsed = tempo da câmera aberta ou posição no arquivo
+    // tape = contador do timecode
     const o = { ctx, w, h, u:(cell ? cell.osdLong : Math.max(w, h))/100*state.osd.size/100, col:state.osd.color, temps:sceneTempsC(),
       idx:0, zoomPct:zoomFraction()*100, nosignal:false, det,
-      live:state.osd.live, now:new Date(), t:performance.now()/1000, elapsed:sourceElapsed() };
+      live:state.osd.live, now:new Date(), t:performance.now()/1000, tape:tapeSeconds(), recording:rec.active };
     if(cell){
       o.idx = cell.idx; o.zoomPct = Math.min(100, (cell.zoom - 1)/5*100); o.nosignal = cell.nosignal;
       o.det = cell.nosignal ? NO_DET : mapDetections(cell.crop);
@@ -2167,9 +2243,11 @@ void main(){
       ctx.fillRect(0, 0, w, h);
       ctx.imageSmoothingEnabled = !state.sensor.pixel;
       ctx.imageSmoothingQuality = 'high';
+      const kx = glCanvas.width/w, ky = glCanvas.height/h;
       cells.forEach(cell=>{
         if(cell.nosignal) drawNoSignal(ctx, cell);
-        else ctx.drawImage(glCanvas, cell.src.sx, cell.src.sy, cell.src.sw, cell.src.sh, cell.x, cell.y, cell.w, cell.h);
+        // a saída (gravação, foto) pode ter outro tamanho que o glCanvas
+        else ctx.drawImage(glCanvas, cell.src.sx*kx, cell.src.sy*ky, cell.src.sw*kx, cell.src.sh*ky, cell.x, cell.y, cell.w, cell.h);
       });
       ctx.restore();
     }
@@ -2222,6 +2300,7 @@ void main(){
     const sd = renderAll(frameNo % STATS_EVERY !== 1);
     syncSceneTemps();
     drawOverlay(octx, RW, RH, true);
+    if(rec.active) drawRecFrame();
     const txt = `${RW}×${RH}` + (sd.on ? ` · sensor ${sd.w}×${sd.h}` : '') + (perf.fps ? ` · ${perf.fps} fps` : '');
     if(txt !== statusText){ statusText = txt; statusLabel.textContent = txt; }
   }
@@ -2822,7 +2901,10 @@ void main(){
   const source = { kind:null, stream:null, track:null, url:null, facing:'environment', mirror:false, hwZoom:null, startedAt:0, cams:0 };
   try { const f = localStorage.getItem('viewfinder-video-facing'); if(f === 'user' || f === 'environment') source.facing = f; } catch(e){}
 
+  // sem processamento de voz: o som ambiente sai como o microfone ouve
+  const MIC = { echoCancellation:false, noiseSuppression:false, autoGainControl:false };
   function stopSource(){
+    if(rec.active) stopRecording();
     state.live = false;
     if(source.stream){ source.stream.getTracks().forEach(t=>t.stop()); source.stream = null; source.track = null; }
     video.pause();
@@ -2846,8 +2928,17 @@ void main(){
     if(!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw Object.assign(new Error('insecure'), { name:'Insecure' });
     // o iPhone não abre duas câmeras ao mesmo tempo: solta a atual antes
     stopSource();
-    const stream = await navigator.mediaDevices.getUserMedia({ audio:false,
-      video:{ facingMode:{ ideal:source.facing }, width:{ ideal:1920 }, height:{ ideal:1080 }, frameRate:{ ideal:30 } } });
+    // câmera e microfone num pedido só; se não der com o microfone, tenta
+    // só a câmera e segue sem som
+    const vc = { facingMode:{ ideal:source.facing }, width:{ ideal:1920 }, height:{ ideal:1080 }, frameRate:{ ideal:30 } };
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ video:vc, audio:state.rec.sound ? MIC : false }); }
+    catch(err){
+      if(!state.rec.sound) throw err;
+      stream = await navigator.mediaDevices.getUserMedia({ video:vc, audio:false });
+      setSound(false);
+      showToast('sem microfone');
+    }
     source.kind = 'camera';
     source.stream = stream;
     source.track = stream.getVideoTracks()[0];
@@ -2861,6 +2952,7 @@ void main(){
     await video.play();
     await videoReady();
     source.startedAt = performance.now();
+    tape.base = 0;
     state.view.zoom = source.hwZoom ? Math.max(source.hwZoom.min, Math.min(source.hwZoom.max, set.zoom || 1)) : 1;
     // o botão de virar só aparece com mais de uma câmera
     try {
@@ -2876,12 +2968,18 @@ void main(){
     source.url = URL.createObjectURL(file);
     source.mirror = false;
     video.src = source.url;
-    video.muted = true;
+    video.muted = !state.rec.sound;
     video.loop = true;
     await videoReady();
     state.view.zoom = 1;
+    tape.base = 0;
     sourceStarted();
-    try { await video.play(); } catch(e){ /* sem autoplay: fica no play do transporte */ }
+    // com som o navegador pode recusar tocar sozinho: aí toca mudo
+    try { await video.play(); }
+    catch(e){
+      video.muted = true;
+      try { await video.play(); } catch(e2){ /* fica no play do transporte */ }
+    }
     syncTransport();
   }
   function sourceStarted(){
@@ -2934,6 +3032,7 @@ void main(){
   });
   $('btnHome').addEventListener('click', ()=>showStart());
   $('btnFlip').addEventListener('click', async()=>{
+    if(rec.active) return showToast('pare a gravação primeiro');
     source.facing = source.facing === 'user' ? 'environment' : 'user';
     try { localStorage.setItem('viewfinder-video-facing', source.facing); } catch(e){}
     try { await openCamera(); }
@@ -2941,13 +3040,16 @@ void main(){
   });
   function syncHud(){
     $('btnFlip').hidden = !(source.kind === 'camera' && source.cams > 1);
+    syncSoundBtn();
     $('transport').hidden = source.kind !== 'file';
   }
-  // segundos pro timecode do OSD: desde que a câmera abriu, ou a posição no arquivo
-  function sourceElapsed(){
+  // contador de fita do timecode: soma o tempo gravado; no arquivo parado
+  // segue a posição do vídeo
+  const tape = { base:0 };
+  function tapeSeconds(){
+    if(rec.active) return tape.base + (performance.now() - rec.startedAt)/1000;
     if(source.kind === 'file') return video.currentTime || 0;
-    if(source.kind === 'camera') return (performance.now() - source.startedAt)/1000;
-    return 0;
+    return tape.base;
   }
 
   /* ---------------------------------------------------------------------
@@ -2955,13 +3057,13 @@ void main(){
   --------------------------------------------------------------------- */
   const ASPECTS = { '16:9':16/9, '4:3':4/3, '1:1':1 };
   // proporção escolhida (em pé vira 9:16, 3:4) ou a do próprio vídeo, com o
-  // lado maior = WORK_LONG × escala do desempenho; lados pares (vídeo)
+  // lado maior = workLong() × escala do desempenho; lados pares (vídeo)
   function workDims(){
     const vw = video.videoWidth || 16, vh = video.videoHeight || 9;
     let asp = vw/vh;
     const a = ASPECTS[state.view.aspect];
     if(a) asp = vw >= vh ? a : 1/a;
-    const long = WORK_LONG*perf.scale;
+    const long = workLong()*perf.scale;
     const even = v=>Math.max(2, Math.round(v/2)*2);
     return asp >= 1 ? { w:even(long), h:even(long/asp) } : { w:even(long*asp), h:even(long) };
   }
@@ -2984,7 +3086,10 @@ void main(){
     frame.style.height = Math.round(h) + 'px';
   }
   new ResizeObserver(fitFrame).observe(viewport);
-  bindToggle('aspectGroup', ()=>state.view.aspect, v=>{ state.view.aspect = v; if(state.live) resizeWork(); });
+  // durante a gravação o tamanho do vídeo fica travado
+  const lockedWhileRec = ()=>{ if(rec.active){ showToast('pare a gravação primeiro'); return true; } return false; };
+  bindToggle('aspectGroup', ()=>state.view.aspect, v=>{ if(lockedWhileRec()) return; state.view.aspect = v; if(state.live) resizeWork(); });
+  bindToggle('recResGroup', ()=>String(state.rec.res), v=>{ if(lockedWhileRec()) return; state.rec.res = +v; if(state.live) resizeWork(); });
 
   // o quadro do vídeo no canvas de trabalho: recorte central na proporção do
   // quadro, menor ainda com o zoom digital; a frontal sai espelhada
@@ -3166,6 +3271,265 @@ void main(){
     if(Number.isFinite(d) && d > 0) video.currentTime = +scrub.value/1000*d;
   });
   scrub.addEventListener('change', ()=>{ scrubbing = false; });
+
+  /* ---------------------------------------------------------------------
+     GRAVAÇÃO E FOTO
+     O vídeo gravado sai de um canvas próprio no tamanho final (720p/1080p):
+     a imagem do WebGL ampliada + OSD e escala desenhados já nesse tamanho,
+     então o texto fica nítido mesmo com o desempenho reduzido.
+  --------------------------------------------------------------------- */
+  const rec = { active:false, recorder:null, chunks:[], startedAt:0, canvas:null, ctx:null, wake:null };
+  const btnRec = $('btnRec'), recTimer = $('recTimer'), btnSound = $('btnSound');
+  // MP4 quando o navegador grava (Safari, Chrome recente); senão WebM
+  const REC_TYPES = [
+    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+    'video/mp4;codecs=avc1,mp4a',
+    'video/mp4',
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm',
+  ];
+  function pickRecType(){
+    if(!window.MediaRecorder) return null;
+    return REC_TYPES.find(t=>MediaRecorder.isTypeSupported(t)) || '';
+  }
+  const fmtHMS = sec=>{ sec = Math.max(0, Math.floor(sec)); return `${pad2(Math.floor(sec/3600))}:${pad2(Math.floor(sec/60) % 60)}:${pad2(sec % 60)}`; };
+  // MMaa-HHmmss no nome, pra duas capturas seguidas não se sobrescreverem
+  function fileStamp(){
+    const d = new Date();
+    return `${pad2(d.getMonth()+1)}${pad2(d.getFullYear() % 100)}-${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
+  }
+  // a proporção atual no lado maior da gravação
+  function recDims(){
+    const long = workLong(), asp = RW/RH, even = v=>Math.max(2, Math.round(v/2)*2);
+    return asp >= 1 ? { w:long, h:even(long/asp) } : { w:even(long*asp), h:long };
+  }
+  // som do arquivo: o <video> passa por um AudioContext pra sair nos alto-
+  // falantes e também na gravação (só dá pra ligar uma vez por elemento)
+  let audioGraph = null;
+  function fileAudioTrack(){
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return null;
+    if(!audioGraph){
+      const ctx = new AC();
+      const src = ctx.createMediaElementSource(video);
+      const dest = ctx.createMediaStreamDestination();
+      src.connect(ctx.destination);
+      src.connect(dest);
+      audioGraph = { ctx, dest };
+    }
+    audioGraph.ctx.resume();
+    return audioGraph.dest.stream.getAudioTracks()[0] || null;
+  }
+  function drawRecFrame(){
+    const c = rec.ctx, w = rec.canvas.width, h = rec.canvas.height;
+    c.fillStyle = '#000';
+    c.fillRect(0, 0, w, h);
+    c.imageSmoothingEnabled = true;
+    c.imageSmoothingQuality = 'high';
+    c.drawImage(glCanvas, 0, 0, w, h);
+    drawOverlay(c, w, h, false);
+    recTimer.textContent = fmtHMS((performance.now() - rec.startedAt)/1000);
+  }
+  function startRecording(){
+    const mime = pickRecType();
+    if(mime == null || !HTMLCanvasElement.prototype.captureStream){ showToast('gravação não suportada neste navegador'); return; }
+    const { w, h } = recDims();
+    rec.canvas = document.createElement('canvas');
+    rec.canvas.width = w; rec.canvas.height = h;
+    rec.ctx = rec.canvas.getContext('2d');
+    rec.startedAt = performance.now();
+    drawRecFrame();
+    const stream = rec.canvas.captureStream(30);
+    if(state.rec.sound){
+      const a = source.kind === 'camera' ? source.stream && source.stream.getAudioTracks()[0] : fileAudioTrack();
+      if(a) stream.addTrack(a);
+    }
+    let recorder;
+    try {
+      const opts = { videoBitsPerSecond:state.rec.res === 1080 ? 12e6 : 6e6, audioBitsPerSecond:128000 };
+      if(mime) opts.mimeType = mime;
+      recorder = new MediaRecorder(stream, opts);
+    } catch(err){ console.error(err); showToast('não foi possível gravar'); return; }
+    const chunks = [];
+    recorder.ondataavailable = e=>{ if(e.data && e.data.size) chunks.push(e.data); };
+    recorder.onstop = ()=>{
+      // só a faixa do canvas: o microfone continua com a câmera
+      stream.getVideoTracks().forEach(t=>t.stop());
+      const type = recorder.mimeType || mime || 'video/webm';
+      const blob = new Blob(chunks, { type });
+      if(!blob.size){ showToast('a gravação saiu vazia'); return; }
+      deliver(blob, `viewfinder-video-${fileStamp()}.${type.includes('mp4') ? 'mp4' : 'webm'}`, 'video');
+    };
+    recorder.onerror = e=>{ console.error(e.error || e); showToast('a gravação parou com erro'); stopRecording(); };
+    recorder.start(1000);
+    rec.recorder = recorder;
+    rec.active = true;
+    btnRec.setAttribute('aria-pressed', 'true');
+    btnRec.setAttribute('aria-label', 'Parar gravação');
+    recTimer.textContent = fmtHMS(0);
+    recTimer.hidden = false;
+    btnSound.disabled = true;
+    keepAwake(true);
+  }
+  function stopRecording(){
+    if(!rec.active) return;
+    rec.active = false;
+    tape.base += (performance.now() - rec.startedAt)/1000;
+    try { if(rec.recorder.state !== 'inactive') rec.recorder.stop(); } catch(e){ console.error(e); }
+    rec.recorder = null;
+    btnRec.setAttribute('aria-pressed', 'false');
+    btnRec.setAttribute('aria-label', 'Gravar vídeo');
+    recTimer.hidden = true;
+    btnSound.disabled = false;
+    keepAwake(false);
+  }
+  btnRec.addEventListener('click', ()=>{
+    if(!state.live) return;
+    if(rec.active) stopRecording();
+    else startRecording();
+  });
+  // saiu do app no meio da gravação: fecha o arquivo com o que já tem
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden && rec.active) stopRecording(); });
+  // tela acesa enquanto grava
+  async function keepAwake(on){
+    try {
+      if(on && navigator.wakeLock) rec.wake = await navigator.wakeLock.request('screen');
+      else if(!on && rec.wake){ await rec.wake.release(); rec.wake = null; }
+    } catch(e){ /* sem wake lock: segue normal */ }
+  }
+
+  // foto: o quadro atual na resolução máxima da câmera (ou do arquivo), com
+  // o pipeline inteiro refeito nesse tamanho e a faixa do preview
+  function takePhoto(){
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if(!state.live || !vw || !vh) return;
+    const fl = $('flash');
+    fl.classList.remove('go'); void fl.offsetWidth; fl.classList.add('go');
+    const asp = RW/RH;
+    let sw = vw, sh = vw/asp;
+    if(sh > vh){ sh = vh; sw = vh*asp; }
+    const z = source.hwZoom ? 1 : state.view.zoom;
+    sw /= z; sh /= z;
+    // nunca menor que o preview (zoom digital alto) nem maior que a GPU aguenta
+    const lim = Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE), ...gl.getParameter(gl.MAX_VIEWPORT_DIMS), 4096);
+    const long = Math.min(lim, Math.max(Math.max(sw, sh), Math.max(RW, RH)));
+    const tw = Math.round(asp >= 1 ? long : long*asp), th = Math.round(asp >= 1 ? long/asp : long);
+    const tmp = document.createElement('canvas');
+    tmp.width = tw; tmp.height = th;
+    const tc = tmp.getContext('2d');
+    tc.imageSmoothingQuality = 'high';
+    if(source.mirror){ tc.translate(tw, 0); tc.scale(-1, 1); }
+    tc.drawImage(video, (vw - sw)/2, (vh - sh)/2, sw, sh, 0, 0, tw, th);
+    const prevW = RW, prevH = RH;
+    let out = null;
+    try {
+      setOutputSize(tw, th);
+      uploadSource(tmp);
+      renderAll(true);
+      out = document.createElement('canvas');
+      out.width = tw; out.height = th;
+      const oc = out.getContext('2d');
+      oc.fillStyle = '#000';
+      oc.fillRect(0, 0, tw, th);
+      oc.drawImage(glCanvas, 0, 0);
+      drawOverlay(oc, tw, th, false);
+    } catch(err){ console.error(err); out = null; }
+    // volta pro tamanho de trabalho e libera os buffers grandes
+    freeTargets();
+    setOutputSize(prevW, prevH);
+    uploadSource(srcCanvas);
+    if(!out){ showToast('não foi possível tirar a foto'); return; }
+    out.toBlob(blob=>{
+      if(blob) deliver(blob, `viewfinder-video-${fileStamp()}.jpg`, 'photo');
+      else showToast('não foi possível tirar a foto');
+    }, 'image/jpeg', 0.92);
+  }
+  $('btnPhoto').addEventListener('click', takePhoto);
+
+  // entrega: no celular, prévia com salvar/compartilhar (o menu do sistema
+  // precisa de um toque); no desktop, download direto
+  function downloadBlob(blob, filename){
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+  }
+  function canShareFile(file){
+    try { return !!(navigator.canShare && navigator.canShare({ files:[file] })); } catch(e){ return false; }
+  }
+  let pending = null;
+  function deliver(blob, name, kind){
+    const file = new File([blob], name, { type:blob.type });
+    if(!(matchMedia('(pointer: coarse)').matches && canShareFile(file))){
+      downloadBlob(blob, name);
+      showToast(kind === 'photo' ? 'foto baixada' : 'vídeo baixado');
+      return;
+    }
+    showResult(file, kind);
+  }
+  function showResult(file, kind){
+    closeResult();
+    pending = { file, url:URL.createObjectURL(file) };
+    const media = $('resultMedia');
+    const el = document.createElement(kind === 'photo' ? 'img' : 'video');
+    if(kind === 'photo') el.alt = 'Foto capturada';
+    else { el.muted = true; el.loop = true; el.autoplay = true; el.playsInline = true; el.setAttribute('playsinline', ''); }
+    el.src = pending.url;
+    media.appendChild(el);
+    $('resultInfo').textContent = `${kind === 'photo' ? 'foto' : 'vídeo'} · ${(file.size/1048576).toFixed(1)} MB`;
+    $('result').hidden = false;
+    $('btnShare').focus({ preventScroll:true });
+  }
+  function closeResult(){
+    $('result').hidden = true;
+    $('resultMedia').innerHTML = '';
+    if(pending){ URL.revokeObjectURL(pending.url); pending = null; }
+  }
+  $('btnShare').addEventListener('click', async()=>{
+    if(!pending) return;
+    try {
+      await navigator.share({ files:[pending.file], title:'Viewfinder Video' });
+      closeResult();
+    } catch(err){
+      // cancelou o menu: a prévia continua aberta
+      if(err.name === 'AbortError') return;
+      downloadBlob(pending.file, pending.file.name);
+      closeResult();
+    }
+  });
+  $('btnDiscard').addEventListener('click', closeResult);
+
+  // som: microfone na câmera, som do vídeo no arquivo
+  function syncSoundBtn(){
+    const on = state.rec.sound, file = source.kind === 'file';
+    const label = file ? (on ? 'Som do vídeo ligado' : 'Som do vídeo desligado') : (on ? 'Microfone ligado' : 'Microfone desligado');
+    btnSound.setAttribute('aria-pressed', on);
+    btnSound.setAttribute('aria-label', label);
+    btnSound.title = label;
+    btnSound.classList.toggle('off', !on);
+    btnSound.querySelector('.ico-on').style.display = on ? '' : 'none';
+    btnSound.querySelector('.ico-off').style.display = on ? 'none' : '';
+  }
+  function setSound(on){ state.rec.sound = on; syncSoundBtn(); }
+  btnSound.addEventListener('click', async()=>{
+    if(rec.active) return;
+    const on = !state.rec.sound;
+    if(source.kind === 'camera' && source.stream){
+      if(on){
+        try {
+          const s = await navigator.mediaDevices.getUserMedia({ audio:MIC });
+          s.getAudioTracks().forEach(t=>source.stream.addTrack(t));
+        } catch(err){ console.error(err); showToast('microfone bloqueado'); return; }
+      } else source.stream.getAudioTracks().forEach(t=>{ t.stop(); source.stream.removeTrack(t); });
+    }
+    if(source.kind === 'file') video.muted = !on;
+    setSound(on);
+    showToast(on ? 'som ligado' : 'som desligado');
+  });
 
   /* ---------------------------------------------------------------------
      GAVETA DE AJUSTES E AVISOS
