@@ -231,13 +231,6 @@
     content:""; position:absolute; inset:0; z-index:-1; pointer-events:none;
     background:radial-gradient(ellipse at center, rgba(0,0,0,.7) 0%, rgba(0,0,0,.5) 60%, rgba(0,0,0,.35) 100%);
   }
-  /* celular em pé: o vídeo (horizontal) fica no alto e some num degradê;
-     título e botões descem pra parte de baixo */
-  @media (orientation: portrait){
-    #start{ padding-top:36%; padding-top:36dvh; padding-bottom:calc(48px + env(safe-area-inset-bottom)); }
-    #start .demo-video{ inset:auto; top:0; left:0; height:36%; }
-    #start::before{ background:linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,.1) 22%, rgba(0,0,0,.8) 33%, #000 37%); }
-  }
   #start h1{ font-size:30px; font-weight:600; margin:0; letter-spacing:.5px; }
   #start h1{ text-shadow:0 2px 12px rgba(0,0,0,.5); }
   #start .lede{ margin:0 0 14px; font-size:12px; color:rgba(255,255,255,.75); max-width:300px; line-height:1.5; }
