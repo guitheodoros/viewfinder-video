@@ -164,6 +164,15 @@
   .rec-btn[aria-pressed="true"]::after{ width:26px; height:26px; border-radius:5px; }
   .rec-btn:active{ transform:scale(.94); }
   .rec-btn:focus-visible{ outline:2px solid #fff; outline-offset:3px; }
+  /* com vídeo carregado o botão exporta: seta branca no lugar do miolo vermelho */
+  .rec-btn svg{ display:none; width:30px; height:30px; fill:none; stroke:#fff; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; }
+  .rec-btn.export{ background:rgba(255,255,255,.12); }
+  .rec-btn.export::after{ display:none; }
+  .rec-btn.export svg{ display:block; }
+  .rec-btn.export[aria-pressed="true"]::after{ display:block; background:#fff; }
+  .rec-btn.export[aria-pressed="true"] svg{ display:none; }
+  .rec-timer.exporting{ background:#fff; color:#000; }
+  .rec-timer.exporting::before{ background:#000; }
   /* tempo de gravação no topo */
   .rec-timer{
     display:flex; align-items:center; gap:6px; padding:5px 10px; border-radius:6px;
@@ -584,7 +593,9 @@
         <button class="round-btn" id="btnPhoto" type="button" aria-label="Tirar foto" title="Tirar foto">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13.5" r="3.5"/></svg>
         </button>
-        <button class="rec-btn" id="btnRec" type="button" aria-label="Gravar vídeo" aria-pressed="false"></button>
+        <button class="rec-btn" id="btnRec" type="button" aria-label="Gravar vídeo" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg>
+        </button>
         <button class="round-btn" id="btnSound" type="button" aria-label="Microfone ligado" title="Microfone ligado" aria-pressed="true">
           <svg class="ico-on" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
           <svg class="ico-off" viewBox="0 0 24 24" aria-hidden="true" style="display:none"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M4 4l16 16"/></svg>
@@ -3070,7 +3081,7 @@ void main(){
   const MIC = { echoCancellation:false, noiseSuppression:false, autoGainControl:false };
   function stopSource(){
     if(demo.on) stopDemo();
-    if(rec.active) stopRecording();
+    if(rec.active) stopRecording(rec.exporting);
     state.live = false;
     if(source.stream){ source.stream.getTracks().forEach(t=>t.stop()); source.stream = null; source.track = null; }
     video.pause();
@@ -3209,6 +3220,13 @@ void main(){
     catch(err){ showStart(cameraError(err)); }
   });
   function syncHud(){
+    const exp = source.kind === 'file';
+    btnRec.classList.toggle('export', exp);
+    if(!rec.active){
+      const label = exp ? 'Exportar vídeo' : 'Gravar vídeo';
+      btnRec.setAttribute('aria-label', label);
+      btnRec.title = label;
+    }
     $('btnFlip').hidden = !(source.kind === 'camera' && source.cams > 1);
     syncSoundBtn();
     $('transport').hidden = source.kind !== 'file';
@@ -3217,6 +3235,7 @@ void main(){
   // segue a posição do vídeo
   const tape = { base:0 };
   function tapeSeconds(){
+    if(rec.exporting) return video.currentTime || 0;
     if(rec.active) return tape.base + (performance.now() - rec.startedAt)/1000;
     if(source.kind === 'file') return video.currentTime || 0;
     return tape.base;
@@ -3441,11 +3460,13 @@ void main(){
     }
   }
   btnPlay.addEventListener('click', ()=>{
+    if(rec.exporting) return;
     if(video.paused) video.play().catch(()=>{});
     else video.pause();
     syncTransport();
   });
   scrub.addEventListener('input', ()=>{
+    if(rec.exporting){ syncTransport(); return; }
     scrubbing = true;
     const d = video.duration;
     if(Number.isFinite(d) && d > 0) video.currentTime = +scrub.value/1000*d;
@@ -3458,7 +3479,9 @@ void main(){
      a imagem do WebGL ampliada + OSD e escala desenhados já nesse tamanho,
      então o texto fica nítido mesmo com o desempenho reduzido.
   --------------------------------------------------------------------- */
-  const rec = { active:false, recorder:null, chunks:[], startedAt:0, canvas:null, ctx:null, wake:null };
+  // exporting = gravando um arquivo carregado do começo ao fim; discard =
+  // parou antes do fim (cancelou ou saiu do app), o arquivo não é entregue
+  const rec = { active:false, exporting:false, discard:false, recorder:null, chunks:[], startedAt:0, canvas:null, ctx:null, wake:null };
   const btnRec = $('btnRec'), recTimer = $('recTimer'), btnSound = $('btnSound');
   // MP4 quando o navegador grava (Safari, Chrome recente); senão WebM
   const REC_TYPES = [
@@ -3509,11 +3532,16 @@ void main(){
     c.imageSmoothingQuality = 'high';
     c.drawImage(glCanvas, 0, 0, w, h);
     drawOverlay(c, w, h, false);
-    recTimer.textContent = fmtHMS((performance.now() - rec.startedAt)/1000);
+    if(rec.exporting){
+      const d = video.duration;
+      recTimer.textContent = `exportando ${Number.isFinite(d) && d > 0 ? Math.min(99, Math.floor(video.currentTime/d*100)) : 0}%`;
+    } else recTimer.textContent = fmtHMS((performance.now() - rec.startedAt)/1000);
   }
-  function startRecording(){
+  function startRecording(exporting){
     const mime = pickRecType();
-    if(mime == null || !HTMLCanvasElement.prototype.captureStream){ showToast('gravação não suportada neste navegador'); return; }
+    if(mime == null || !HTMLCanvasElement.prototype.captureStream){ showToast('gravação não suportada neste navegador'); return false; }
+    rec.exporting = !!exporting;
+    rec.discard = false;
     const { w, h } = recDims();
     rec.canvas = document.createElement('canvas');
     rec.canvas.width = w; rec.canvas.height = h;
@@ -3530,47 +3558,80 @@ void main(){
       const opts = { videoBitsPerSecond:state.rec.res === 1080 ? 12e6 : 6e6, audioBitsPerSecond:128000 };
       if(mime) opts.mimeType = mime;
       recorder = new MediaRecorder(stream, opts);
-    } catch(err){ console.error(err); showToast('não foi possível gravar'); return; }
+    } catch(err){ console.error(err); showToast('não foi possível gravar'); rec.exporting = false; return false; }
     const chunks = [];
     recorder.ondataavailable = e=>{ if(e.data && e.data.size) chunks.push(e.data); };
     recorder.onstop = ()=>{
       // só a faixa do canvas: o microfone continua com a câmera
       stream.getVideoTracks().forEach(t=>t.stop());
+      if(discard){ showToast('exportação cancelada'); return; }
       const type = recorder.mimeType || mime || 'video/webm';
       const blob = new Blob(chunks, { type });
       if(!blob.size){ showToast('a gravação saiu vazia'); return; }
       deliver(blob, `viewfinder-video-${fileStamp()}.${type.includes('mp4') ? 'mp4' : 'webm'}`, 'video');
     };
     recorder.onerror = e=>{ console.error(e.error || e); showToast('a gravação parou com erro'); stopRecording(); };
+    // o onstop lê o "discard" deste recorder (fica guardado aqui)
+    let discard = false;
+    recorder.markDiscard = ()=>{ discard = true; };
     recorder.start(1000);
     rec.recorder = recorder;
     rec.active = true;
     btnRec.setAttribute('aria-pressed', 'true');
-    btnRec.setAttribute('aria-label', 'Parar gravação');
-    recTimer.textContent = fmtHMS(0);
+    btnRec.setAttribute('aria-label', rec.exporting ? 'Cancelar exportação' : 'Parar gravação');
+    recTimer.textContent = rec.exporting ? 'exportando 0%' : fmtHMS(0);
+    recTimer.classList.toggle('exporting', rec.exporting);
     recTimer.hidden = false;
     btnSound.disabled = true;
+    scrub.disabled = btnPlay.disabled = rec.exporting;
     keepAwake(true);
+    return true;
   }
-  function stopRecording(){
+  // discard: a exportação não chegou ao fim, o arquivo não é entregue
+  function stopRecording(discard){
     if(!rec.active) return;
     rec.active = false;
-    tape.base += (performance.now() - rec.startedAt)/1000;
+    if(rec.exporting){
+      rec.exporting = false;
+      video.removeEventListener('ended', exportEnded);
+      video.loop = true;
+      scrub.disabled = btnPlay.disabled = false;
+      if(discard && rec.recorder.markDiscard) rec.recorder.markDiscard();
+      // volta a tocar em loop, como antes de exportar
+      if(source.kind === 'file') video.play().catch(()=>{});
+    } else tape.base += (performance.now() - rec.startedAt)/1000;
     try { if(rec.recorder.state !== 'inactive') rec.recorder.stop(); } catch(e){ console.error(e); }
     rec.recorder = null;
     btnRec.setAttribute('aria-pressed', 'false');
-    btnRec.setAttribute('aria-label', 'Gravar vídeo');
     recTimer.hidden = true;
+    recTimer.classList.remove('exporting');
     btnSound.disabled = false;
     keepAwake(false);
+    syncHud();
+  }
+  // exportar o arquivo: volta pro começo, toca uma vez sem loop gravando e
+  // entrega quando o vídeo termina
+  function exportEnded(){ stopRecording(false); }
+  async function startExport(){
+    video.pause();
+    video.loop = false;
+    if(video.currentTime > 0.05){
+      await new Promise(res=>{ video.addEventListener('seeked', res, { once:true }); video.currentTime = 0; });
+    }
+    if(!startRecording(true)){ video.loop = true; return; }
+    video.addEventListener('ended', exportEnded);
+    try { await video.play(); }
+    catch(err){ console.error(err); showToast('não foi possível tocar o vídeo'); stopRecording(true); }
   }
   btnRec.addEventListener('click', ()=>{
     if(!state.live) return;
-    if(rec.active) stopRecording();
-    else startRecording();
+    if(rec.active) stopRecording(rec.exporting);
+    else if(source.kind === 'file') startExport();
+    else startRecording(false);
   });
-  // saiu do app no meio da gravação: fecha o arquivo com o que já tem
-  document.addEventListener('visibilitychange', ()=>{ if(document.hidden && rec.active) stopRecording(); });
+  // saiu do app no meio: a gravação fecha com o que já tem; a exportação
+  // (incompleta) é cancelada
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden && rec.active) stopRecording(rec.exporting); });
   // tela acesa enquanto grava
   async function keepAwake(on){
     try {

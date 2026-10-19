@@ -1,2 +1,6 @@
 _test*
 .DS_Store
+viewfinder-video-*.mp4
+viewfinder-video-*.MP4
+viewfinder-video-*.webm
+viewfinder-video-*.jpg
