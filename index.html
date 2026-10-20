@@ -665,23 +665,23 @@
 
     <details class="panel" name="painel" id="panelLook" style="display:none;">
       <summary><h2>Ajustes do look</h2></summary>
-      <div class="row nv-only"><label>fósforo</label>
-        <div class="toggle-group" id="nvPhosphorGroup">
-          <button data-v="green" class="active">verde</button>
-          <button data-v="white">p&amp;b</button>
-        </div>
+      <div class="toggle-group nv-only" id="nvPhosphorGroup" style="margin-bottom:10px;" role="group" aria-label="Cor da imagem">
+        <button data-v="green" class="active">verde</button>
+        <button data-v="white">p&amp;b</button>
       </div>
       <div class="check nv-only"><input type="checkbox" id="nvInvert"><label for="nvInvert">inverter (negativo)</label></div>
       <div class="row"><label for="lkSat">saturação</label><input type="range" id="lkSat" autocomplete="off" min="0" max="200"><span class="val" id="lkSatVal"></span></div>
       <div class="row"><label for="lkTemp">frio ↔ quente</label><input type="range" id="lkTemp" autocomplete="off" min="-100" max="100"><span class="val" id="lkTempVal"></span></div>
       <div class="row"><label for="lkTint">magenta ↔ verde</label><input type="range" id="lkTint" autocomplete="off" min="-100" max="100"><span class="val" id="lkTintVal"></span></div>
-      <div class="row"><label for="lkExposure">exposição</label><input type="range" id="lkExposure" autocomplete="off" min="-50" max="50"><span class="val" id="lkExposureVal"></span></div>
+      <div class="row"><label for="lkExposure" id="lkExposureLabel">exposição</label><input type="range" id="lkExposure" autocomplete="off" min="-50" max="50"><span class="val" id="lkExposureVal"></span></div>
       <div class="row"><label for="lkContrast">contraste</label><input type="range" id="lkContrast" autocomplete="off" min="-50" max="50"><span class="val" id="lkContrastVal"></span></div>
       <div class="row"><label for="lkLift">pretos lavados</label><input type="range" id="lkLift" autocomplete="off" min="0" max="50"><span class="val" id="lkLiftVal"></span></div>
       <div class="row"><label for="lkKeepRed">manter vermelhos</label><input type="range" id="lkKeepRed" autocomplete="off" min="0" max="100"><span class="val" id="lkKeepRedVal"></span></div>
       <div class="row"><label for="lkSharpen">nitidez</label><input type="range" id="lkSharpen" autocomplete="off" min="0" max="100"><span class="val" id="lkSharpenVal"></span></div>
       <div class="row"><label for="lkLines" id="lkLinesLabel">linhas</label><input type="range" id="lkLines" autocomplete="off" min="0" max="100"><span class="val" id="lkLinesVal"></span></div>
-      <p class="hint">"manter vermelhos" segura a cor dos vermelhos mesmo com a imagem dessaturada. no cctv as linhas são o entrelaçado do vídeo; no camcorder, a grade de subpixels da tela LCD; no night vision, o "tubo" escurece as bordas num círculo, como a vista pela ocular.</p>
+      <div class="row nv-only"><label for="lkDiffusion">difusão</label><input type="range" id="lkDiffusion" autocomplete="off" min="0" max="100"><span class="val" id="lkDiffusionVal"></span></div>
+      <p class="hint not-nv">"manter vermelhos" segura a cor dos vermelhos mesmo com a imagem dessaturada. no cctv as linhas são o entrelaçado do vídeo; no camcorder, a grade de subpixels da tela LCD.</p>
+      <p class="hint nv-only">o ganho clareia a cena como o intensificador de um óculos de visão noturna; o tubo escurece as bordas num círculo, como a vista pela ocular; a difusão suaviza a imagem.</p>
     </details>
 
     <details class="panel" name="painel" id="panelSource">
@@ -727,7 +727,7 @@
       <p class="hint">roda no seu aparelho (MediaPipe), quadro a quadro: o vídeo não sai dele. a rápida (0,25 MB) só recorta a pessoa; a detalhada (16 MB) separa cabelo, pele e roupa e pesa mais no celular. o primeiro uso baixa o motor da IA (~12 MB) e trava a imagem alguns segundos enquanto prepara.</p>
     </details>
 
-    <details class="panel" name="painel">
+    <details class="panel" name="painel" id="panelSensor">
       <summary><h2>Sensor</h2></summary>
       <div class="row"><label for="sensorRes">resolução</label>
         <select id="sensorRes">
@@ -776,7 +776,7 @@
       </div>
     </details>
 
-    <details class="panel" name="painel">
+    <details class="panel" name="painel" id="panelNoise">
       <summary><h2>Ruído</h2></summary>
       <div class="row"><label for="grain">grão</label><input type="range" id="grain" autocomplete="off" min="0" max="100"><span class="val" id="grainVal"></span></div>
       <div class="row"><label for="grainSize">tamanho do grão</label><input type="range" id="grainSize" autocomplete="off" min="1" max="8"><span class="val" id="grainSizeVal"></span></div>
@@ -979,9 +979,9 @@
     },
     // visão noturna: intensificador verde, luzes estourando, grão cintilante
     nightvision: {
-      sensor:{ res:640, pixel:false, diffusion:10, msx:0, bloom:70 },
-      noise:{ grain:34, size:1, vignette:45, fpn:0 },
-      grade:{ sat:0, temp:0, tint:0, exposure:25, contrast:15, lift:4, keepRed:0, sharpen:20, lines:0, phosphor:'green', invert:false },
+      sensor:{ res:640, pixel:false, diffusion:10, msx:0, bloom:25 },
+      noise:{ grain:50, size:1, vignette:45, fpn:0 },
+      grade:{ sat:0, temp:0, tint:0, exposure:25, contrast:15, lift:15, keepRed:0, sharpen:20, lines:0, phosphor:'green', invert:false },
     },
     camcorder: {
       sensor:{ res:0, pixel:false, diffusion:0, msx:0, bloom:10 },
@@ -2824,7 +2824,9 @@ void main(){
   // controles de sensor e ruído: cada look guarda os seus (ver switchLook)
   const sharedCtls = [{ sync(){ sensorRes.value = state.sensor.res; } }];
   sharedCtls.push(bindToggle('upscaleGroup', ()=>state.sensor.pixel ? 'pixel' : 'smooth', v=>state.sensor.pixel = v === 'pixel'));
-  sharedCtls.push(bindRange('diffusion', ()=>state.sensor.diffusion, v=>state.sensor.diffusion = v, pct));
+  sharedCtls.push(bindRange('diffusion', ()=>state.sensor.diffusion, v=>{ state.sensor.diffusion = v; sharedCtls.forEach(c=>c.sync()); }, pct));
+  // a mesma difusão, dentro dos ajustes do night vision
+  sharedCtls.push(bindRange('lkDiffusion', ()=>state.sensor.diffusion, v=>{ state.sensor.diffusion = v; sharedCtls.forEach(c=>c.sync()); }, pct));
   sharedCtls.push(bindRange('msx', ()=>state.sensor.msx, v=>state.sensor.msx = v, pct));
   sharedCtls.push(bindRange('bloom', ()=>state.sensor.bloom, v=>state.sensor.bloom = v, pct));
 
@@ -3045,7 +3047,13 @@ void main(){
     const nv = state.look === 'nightvision';
     ['lkSat', 'lkTemp', 'lkTint'].forEach(id=>{ $(id).closest('.row').style.display = nv ? 'none' : ''; });
     document.querySelectorAll('.nv-only').forEach(el=>{ el.style.display = nv ? '' : 'none'; });
-    $('lkLinesLabel').textContent = nv ? 'tubo (ocular)' : 'linhas';
+    document.querySelectorAll('.not-nv').forEach(el=>{ el.style.display = nv ? 'none' : ''; });
+    // night vision enxuto: pretos lavados e nitidez ficam no preset; sensor e
+    // ruído saem da vista (a difusão vem pra dentro dos ajustes do look)
+    ['lkLift', 'lkSharpen'].forEach(id=>{ $(id).closest('.row').style.display = nv ? 'none' : ''; });
+    $('panelSensor').style.display = $('panelNoise').style.display = nv ? 'none' : '';
+    $('lkExposureLabel').textContent = nv ? 'ganho' : 'exposição';
+    $('lkLinesLabel').textContent = nv ? 'tubo' : 'linhas';
   }
   const lookCtl = bindToggle('lookGroup', ()=>state.look, v=>switchLook(v));
   [['lkSat','sat', pct], ['lkTemp','temp'], ['lkTint','tint'], ['lkExposure','exposure'], ['lkContrast','contrast'],
