@@ -656,7 +656,7 @@
         </div>
       </div>
       <!-- desempenho fica sempre no automático (o controle volta no "avançado") -->
-      <div class="row" hidden><label>desempenho</label>
+      <div class="row" hidden data-adv><label>desempenho</label>
         <div class="toggle-group" id="perfGroup">
           <button data-v="auto" class="active">auto</button>
           <button data-v="quality">qualidade</button>
@@ -842,7 +842,7 @@
       <div class="check"><input type="checkbox" id="osdOn"><label for="osdOn">mostrar OSD</label></div>
       <div class="check" id="osdSurvRow" style="display:none;"><input type="checkbox" id="osdSurv"><label for="osdSurv">vigilância IA</label></div>
       <!-- template escolhido à mão, fonte, cor, textos…: ficam para o "avançado" -->
-      <div class="row" hidden><label for="osdTemplate">template</label>
+      <div class="row" hidden data-adv><label for="osdTemplate">template</label>
         <select id="osdTemplate">
           <option value="none">nenhum</option>
           <option value="ircam">ir-cam (térmico)</option>
@@ -880,7 +880,7 @@
         <button data-v="1p5">1+5</button>
       </div>
       <!-- lista completa de layouts, fio, sem sinal e quadro a quadro: ficam para o "avançado" -->
-      <div class="row" hidden><label for="gridLayout">layout</label>
+      <div class="row" hidden data-adv><label for="gridLayout">layout</label>
         <select id="gridLayout">
           <option value="1x1">quadro único</option>
           <option value="2x2">2 × 2</option>
@@ -892,21 +892,21 @@
       </div>
       <div id="gridControls" style="display:none;">
         <div class="row"><label for="gridDelay">atraso máximo</label><input type="range" id="gridDelay" autocomplete="off" min="0" max="50"><span class="val" id="gridDelayVal"></span></div>
-        <div class="row" hidden><label for="gridGap">fio</label><input type="range" id="gridGap" autocomplete="off" min="0" max="30"><span class="val" id="gridGapVal"></span></div>
-        <div class="row" hidden><label for="gridGapColor">cor do fio</label><input type="color" id="gridGapColor" aria-label="Cor do fio"></div>
-        <div class="row" hidden><label for="gridNoSignal">sem sinal</label><input type="text" id="gridNoSignal" autocomplete="off" spellcheck="false"></div>
+        <div class="row" hidden data-adv><label for="gridGap">fio</label><input type="range" id="gridGap" autocomplete="off" min="0" max="30"><span class="val" id="gridGapVal"></span></div>
+        <div class="row" hidden data-adv><label for="gridGapColor">cor do fio</label><input type="color" id="gridGapColor" aria-label="Cor do fio"></div>
+        <div class="row" hidden data-adv><label for="gridNoSignal">sem sinal</label><input type="text" id="gridNoSignal" autocomplete="off" spellcheck="false"></div>
         <button class="btn" id="btnShuffleCells" style="width:100%;margin-bottom:6px;">⟳ sortear enquadramentos</button>
-        <div class="subhead" hidden>quadro</div>
-        <div class="cell-map" id="cellSel" role="group" aria-label="Escolher quadro" hidden></div>
-        <div class="row" hidden><label>conteúdo</label>
+        <div class="subhead" hidden data-adv>quadro</div>
+        <div class="cell-map" id="cellSel" role="group" aria-label="Escolher quadro" hidden data-adv></div>
+        <div class="row" hidden data-adv><label>conteúdo</label>
           <div class="toggle-group" id="cellMode">
             <button data-v="image" class="active">imagem</button>
             <button data-v="nosignal">sem sinal</button>
           </div>
         </div>
-        <div class="row" hidden><label for="cellZoom">zoom</label><input type="range" id="cellZoom" autocomplete="off" min="100" max="600"><span class="val" id="cellZoomVal"></span></div>
-        <div class="row" hidden><label for="cellX">posição x</label><input type="range" id="cellX" autocomplete="off" min="0" max="100"><span class="val" id="cellXVal"></span></div>
-        <div class="row" hidden><label for="cellY">posição y</label><input type="range" id="cellY" autocomplete="off" min="0" max="100"><span class="val" id="cellYVal"></span></div>
+        <div class="row" hidden data-adv><label for="cellZoom">zoom</label><input type="range" id="cellZoom" autocomplete="off" min="100" max="600"><span class="val" id="cellZoomVal"></span></div>
+        <div class="row" hidden data-adv><label for="cellX">posição x</label><input type="range" id="cellX" autocomplete="off" min="0" max="100"><span class="val" id="cellXVal"></span></div>
+        <div class="row" hidden data-adv><label for="cellY">posição y</label><input type="range" id="cellY" autocomplete="off" min="0" max="100"><span class="val" id="cellYVal"></span></div>
       </div>
       <p class="hint">cada quadro mostra um enquadramento da mesma cena, com o próprio OSD. o quadro 1 é ao vivo; os outros vêm atrasados, escalonados até o "atraso máximo", em 10 quadros por segundo como um gravador de cctv (e o relógio de cada um atrasa junto). os enquadramentos miram nas pessoas detectadas pela IA; "sortear" troca todos de uma vez.</p>
     </details>
@@ -1032,6 +1032,9 @@
   const heatToC = h => T_MIN_C + h*T_SPAN_C;
 
   const $ = id => document.getElementById(id);
+  // modo avançado (sem botão no app): abrir com ?avancado mostra todos os
+  // ajustes que a tela simples esconde
+  const ADVANCED = new URLSearchParams(location.search).has('avancado');
   const glCanvas = $('glCanvas');
   const overlay = $('overlay');
   const octx = overlay.getContext('2d');
@@ -2808,7 +2811,7 @@ void main(){
   function syncSegUI(){
     const mode = state.seg.mode;
     // temperaturas e fundo só valem no look térmico
-    $('segControls').style.display = 'none';
+    $('segControls').style.display = ADVANCED && mode !== 'off' && state.look === 'thermal' ? '' : 'none';
     $('segSimple').style.display = mode === 'off' || state.look !== 'thermal' ? 'none' : '';
     document.querySelectorAll('.seg-detail').forEach(el=>el.style.display = mode === 'detail' ? '' : 'none');
     document.querySelectorAll('.seg-fast').forEach(el=>el.style.display = mode === 'fast' ? '' : 'none');
@@ -3075,7 +3078,7 @@ void main(){
     loadOsdFont();
   }
   function syncOsdUI(){
-    $('osdCommon').style.display = 'none';
+    $('osdCommon').style.display = ADVANCED && OSD_TEMPLATES[state.osd.template] ? '' : 'none';
     buildOsdFields();
     syncOsdHint();
   }
@@ -3139,7 +3142,7 @@ void main(){
     const cfg = LOOK_PANEL[state.look];
     if(!cfg) return;
     // térmico enxuto: fonte do calor, faixa, paleta completa e escala ficam no preset
-    if(thermal && cfg.lean) ['panelSource', 'panelRange', 'panelPalette', 'panelScale'].forEach(id=>{ $(id).style.display = 'none'; });
+    if(thermal && cfg.lean && !ADVANCED) ['panelSource', 'panelRange', 'panelPalette', 'panelScale'].forEach(id=>{ $(id).style.display = 'none'; });
     const host = $('lookCtls');
     host.querySelectorAll('[data-k]').forEach(el=>{ el.style.display = 'none'; });
     cfg.ctls.forEach(k=>{ const el = host.querySelector(`[data-k="${k}"]`); el.style.display = ''; host.appendChild(el); });
@@ -3147,7 +3150,7 @@ void main(){
     $('lkLinesLabel').textContent = (cfg.labels && cfg.labels.lines) || LOOK_LABELS.lines;
     $('lookHint').textContent = cfg.hint;
     // look enxuto: sensor e ruído ficam no preset, fora da vista
-    $('panelSensor').style.display = $('panelNoise').style.display = cfg.lean ? 'none' : '';
+    $('panelSensor').style.display = $('panelNoise').style.display = cfg.lean && !ADVANCED ? 'none' : '';
   }
   const lookCtl = bindToggle('lookGroup', ()=>state.look, v=>switchLook(v));
   [['lkSat','sat', pct], ['lkTemp','temp'], ['lkTint','tint'], ['lkExposure','exposure'], ['lkContrast','contrast'],
@@ -4502,6 +4505,12 @@ void main(){
   paletteChanged();
   // a escala usa Geist Mono no canvas: redesenha quando a fonte chegar
   document.fonts.load('500 20px "Geist Mono"').then(()=>{ if(state.scale.show) requestRender(); }).catch(()=>{});
+  // modo avançado: devolve à vista os controles marcados com data-adv
+  if(ADVANCED){
+    document.querySelectorAll('[data-adv]').forEach(el=>{ el.hidden = false; });
+    $('segModeGroup').style.display = '';
+    syncLookUI(); syncSegUI(); syncOsdUI();
+  }
   // a tela de abertura começa com a demonstração tocando atrás
   startDemo();
 })();
