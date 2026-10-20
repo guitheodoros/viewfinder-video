@@ -285,8 +285,7 @@
   @media (max-width: 899px){
     #app{ display:block; }
     #viewport{ position:absolute; left:0; right:0; top:0; bottom:0; transition:bottom .3s cubic-bezier(.2,.8,.2,1); }
-    /* com a gaveta aberta o visor encolhe pra cima dela */
-    #app.sheet-open #viewport{ bottom:62dvh; }
+    /* a gaveta abre por cima da imagem (vidro), sem encolher o visor */
     #app.sheet-open .hud-bottom{ display:none; }
     #sheet{
       position:fixed; left:0; right:0; bottom:0; z-index:30; height:62vh; height:62dvh;
@@ -565,11 +564,112 @@
   }
   footer a{ color:inherit; text-decoration:none; white-space:nowrap; }
   footer a:hover{ color:var(--text); text-decoration:underline; }
+  /* ===================================================================
+     VIDRO (glassmorphism)
+     O fundo é o próprio vídeo: uma cópia minúscula do quadro, ampliada e
+     bem borrada, preenche a tela atrás de tudo (#ambient). Gaveta, painéis,
+     botões e avisos são vidro fosco escuro com borda fina clara por cima.
+  =================================================================== */
+  #ambient{
+    position:absolute; left:-15%; top:-15%; width:130%; height:130%; z-index:0;
+    filter:blur(48px) saturate(1.35) brightness(.62); pointer-events:none;
+  }
+  #viewport{ background:transparent; z-index:1; }
+  #themeBtn{ display:none; }
+  /* tokens claros sobre vidro escuro, só dentro dos elementos de vidro */
+  #sheet, .cpick-pop, .result-card{
+    --text:#f4f4f6; --muted:rgba(255,255,255,.58); --seg-text:rgba(255,255,255,.72);
+    --field:rgba(255,255,255,.07); --hover:rgba(255,255,255,.14); --control:rgba(255,255,255,.18);
+    --border:rgba(255,255,255,.14); --on-text:#121214; --panel:rgba(255,255,255,.04);
+    --chk-border:rgba(255,255,255,.4); --swatch-border:rgba(255,255,255,.3);
+    color:var(--text);
+  }
+  #sheet{
+    background:rgba(16,16,22,.42);
+    -webkit-backdrop-filter:blur(26px) saturate(1.5); backdrop-filter:blur(26px) saturate(1.5);
+    border:1px solid rgba(255,255,255,.16); border-top-color:rgba(255,255,255,.28);
+    box-shadow:0 24px 70px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06);
+    z-index:20;
+  }
+  .sheet-head{ border-bottom:1px solid rgba(255,255,255,.12); }
+  .sheet-head h1{ font-weight:500; }
+  #btnSheetClose{ background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.2); }
+  /* painéis: cartões de vidro mais leves dentro da gaveta */
+  #sheet .panel{
+    background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); border-radius:14px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  #sheet .panel h2{ border-bottom-color:rgba(255,255,255,.1); letter-spacing:.8px; }
+  #sheet .toggle-group{ border-radius:9px; border-color:rgba(255,255,255,.16); background:rgba(255,255,255,.04); }
+  #sheet .toggle-group button{ background:transparent; }
+  #sheet .toggle-group button + button{ border-left-color:rgba(255,255,255,.12); }
+  #sheet .toggle-group button.active{ background:rgba(255,255,255,.92); color:#121214; }
+  #sheet .pal-btn{ border-radius:10px; background:rgba(255,255,255,.05); border-color:rgba(255,255,255,.14); }
+  #sheet .pal-btn.active{ border-color:#fff; box-shadow:0 0 0 1px #fff; }
+  #sheet .btn{
+    background:rgba(255,255,255,.1); color:#fff; border:1px solid rgba(255,255,255,.22); border-radius:10px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.12); text-shadow:none;
+  }
+  #sheet .btn:active{ transform:scale(.98); box-shadow:none; }
+  #sheet select, #sheet input[type=number], #sheet .row input[type=text], #sheet .row textarea, #sheet button.cpick-trigger{
+    border-radius:8px; border-color:rgba(255,255,255,.18); background:rgba(255,255,255,.07);
+  }
+  #sheet footer{ border-top-color:rgba(255,255,255,.14); }
+  @media (min-width: 900px){
+    /* desktop: a gaveta flutua à direita por cima da imagem; o HUD se afasta dela */
+    #sheet{ position:absolute; top:16px; right:16px; width:340px; max-height:calc(100% - 32px); border-radius:20px; overflow:hidden; border-left-width:1px; }
+    #app.sheet-open .hud{ right:372px; }
+  }
+  @media (max-width: 899px){
+    #sheet{ border-radius:22px 22px 0 0; border-bottom:none; }
+  }
+  /* HUD: vidro nos botões e nos chips */
+  .round-btn, .look-chips{
+    background:rgba(20,20,26,.32); border:1px solid rgba(255,255,255,.22); border-top-color:rgba(255,255,255,.34);
+    -webkit-backdrop-filter:blur(18px) saturate(1.4); backdrop-filter:blur(18px) saturate(1.4);
+    box-shadow:0 8px 24px rgba(0,0,0,.25);
+  }
+  .look-chips button.active{ background:rgba(255,255,255,.92); }
+  .hud-top, .hud-bottom{ background:none; }
+  .toast{
+    background:rgba(20,20,26,.4); border:1px solid rgba(255,255,255,.2);
+    -webkit-backdrop-filter:blur(18px); backdrop-filter:blur(18px);
+  }
+  /* tela de abertura: botões de vidro sobre o vídeo de demonstração */
+  #start .btn{
+    border-radius:14px; border:1px solid rgba(255,255,255,.24); border-top-color:rgba(255,255,255,.4);
+    background:rgba(255,255,255,.1); color:#fff; text-shadow:none;
+    -webkit-backdrop-filter:blur(18px) saturate(1.4); backdrop-filter:blur(18px) saturate(1.4);
+    box-shadow:0 10px 30px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.12);
+  }
+  #start .btn.primary{ background:rgba(255,255,255,.88); color:#121214; border-color:rgba(255,255,255,.9); }
+  #start .btn:active{ transform:scale(.98); }
+  /* resultado e seletor de cor */
+  .result-card, .cpick-pop{
+    background:rgba(16,16,22,.5); border:1px solid rgba(255,255,255,.18); border-radius:20px;
+    -webkit-backdrop-filter:blur(26px) saturate(1.5); backdrop-filter:blur(26px) saturate(1.5);
+    box-shadow:0 24px 70px rgba(0,0,0,.45);
+  }
+  .cpick-pop{ border-radius:14px; }
+  .result-card .btn{ border-radius:12px; text-shadow:none; }
+  .result-card .btn:not(.primary){ background:rgba(255,255,255,.1); color:#fff; border:1px solid rgba(255,255,255,.22); box-shadow:none; }
+  .result-card .btn.primary{ background:rgba(255,255,255,.9); color:#121214; border-color:#fff; box-shadow:none; }
+  /* sem desfoque (navegador antigo) ou "reduzir transparência": vidro quase opaco */
+  @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+    #sheet, .result-card, .cpick-pop{ background:rgba(22,22,28,.94); }
+    .round-btn, .look-chips, .toast, #start .btn:not(.primary){ background:rgba(22,22,28,.85); }
+  }
+  @media (prefers-reduced-transparency: reduce){
+    #sheet, .result-card, .cpick-pop{ background:rgba(22,22,28,.96); -webkit-backdrop-filter:none; backdrop-filter:none; }
+    .round-btn, .look-chips, .toast, #start .btn:not(.primary){ background:rgba(22,22,28,.9); -webkit-backdrop-filter:none; backdrop-filter:none; }
+    #ambient{ display:none; }
+  }
 </style>
 </head>
 <body>
 
 <div id="app">
+  <canvas id="ambient" width="48" height="27" aria-hidden="true"></canvas>
   <div id="viewport">
     <div id="frame">
       <canvas id="glCanvas" width="1280" height="720"></canvas>
@@ -1026,6 +1126,8 @@
   const overlay = $('overlay');
   const octx = overlay.getContext('2d');
   const frame = $('frame');
+  const ambient = $('ambient');
+  const ambientCtx = ambient.getContext('2d');
   const viewport = $('viewport');
   const statusLabel = $('statusLabel');
   const startScreen = $('start');
@@ -2471,6 +2573,8 @@ void main(){
     pushHistory(nowMs());
     syncSceneTemps();
     drawOverlay(octx, RW, RH, true);
+    // fundo ambiente: o quadro em 48×27, 5 vezes por segundo (o CSS borra)
+    if(frameNo % 6 === 0) ambientCtx.drawImage(glCanvas, 0, 0, ambient.width, ambient.height);
     if(rec.active) drawRecFrame();
     const txt = `${RW}×${RH}` + (sd.on ? ` · sensor ${sd.w}×${sd.h}` : '') + (perf.fps ? ` · ${perf.fps} fps` : '');
     if(txt !== statusText){ statusText = txt; statusLabel.textContent = txt; }
@@ -3455,6 +3559,7 @@ void main(){
     fitFrame();
   }
   // contain dentro do visor
+  // contain no visor; a gaveta de vidro abre por cima, sem mudar a imagem
   function fitFrame(){
     if(!RW || !RH) return;
     const vw = viewport.clientWidth, vh = viewport.clientHeight;
