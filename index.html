@@ -335,6 +335,7 @@
     margin-bottom:8px;
     gap:8px;
   }
+  .row[hidden]{ display:none; }
   .row label{ font-size:11px; color:var(--muted); flex:1; }
   .row .val{ font-size:11px; min-width:34px; text-align:right; font-variant-numeric:tabular-nums; }
   .row .toggle-group{ flex:2; }
@@ -649,18 +650,19 @@
       </div>
       <div class="row"><label>gravação</label>
         <div class="toggle-group" id="recResGroup">
-          <button data-v="720" class="active">720p</button>
-          <button data-v="1080">1080p</button>
+          <button data-v="720">720p</button>
+          <button data-v="1080" class="active">1080p</button>
         </div>
       </div>
-      <div class="row"><label>desempenho</label>
+      <!-- desempenho fica sempre no automático (o controle volta no "avançado") -->
+      <div class="row" hidden><label>desempenho</label>
         <div class="toggle-group" id="perfGroup">
           <button data-v="auto" class="active">auto</button>
           <button data-v="quality">qualidade</button>
           <button data-v="smooth">fluidez</button>
         </div>
       </div>
-      <p class="hint">auto segue o vídeo: com o celular em pé fica vertical, deitado fica horizontal. 4:3 e 1:1 recortam o centro. no desempenho automático a resolução interna baixa sozinha quando o aparelho não segura 30 quadros por segundo; o vídeo gravado sai sempre em 720p ou 1080p. a foto sai na resolução máxima da câmera.</p>
+      <p class="hint">auto segue o vídeo: com o celular em pé fica vertical, deitado fica horizontal. 4:3 e 1:1 recortam o centro. a gravação define a resolução do vídeo salvo; a foto sai na resolução máxima da câmera.</p>
     </details>
 
     <details class="panel" name="painel" id="panelLook" style="display:none;">
@@ -959,7 +961,7 @@
     // quadro: proporção, desempenho e zoom (óptico quando o aparelho deixa)
     view: { aspect:'auto', perf:'auto', zoom:1 },
     // gravação: resolução e som (microfone na câmera, som do arquivo)
-    rec: { res:720, sound:true },
+    rec: { res:1080, sound:true },
     src: { red:28, skin:30, lights:0, invert:false },
     // temperaturas em °C; a régua calor↔°C é T_MIN_C..T_MIN_C+T_SPAN_C
     seg: { mode:'off', tFace:36.5, tBody:34.5, tCloth:29, tHair:27.5, tPerson:33, tBg:20, photo:35, bg:0, bgColor:'#2f3bd3', edge:50 },
