@@ -663,7 +663,6 @@
           <button data-v="smooth">fluidez</button>
         </div>
       </div>
-      <p class="hint">auto segue o vídeo: com o celular em pé fica vertical, deitado fica horizontal. 4:3 e 1:1 recortam o centro. a gravação define a resolução do vídeo salvo; a foto sai na resolução máxima da câmera.</p>
     </details>
 
     <details class="panel" name="painel" id="panelLook" style="display:none;">
@@ -691,17 +690,14 @@
       <div class="row" data-k="diffusion"><label for="lkDiffusion">difusão</label><input type="range" id="lkDiffusion" autocomplete="off" min="0" max="100"><span class="val" id="lkDiffusionVal"></span></div>
       <div class="row" data-k="poster"><label for="lkPoster">isotermas</label><input type="range" id="lkPoster" autocomplete="off" min="1" max="16"><span class="val" id="lkPosterVal"></span></div>
       </div>
-      <p class="hint" id="lookHint"></p>
     </details>
 
     <details class="panel" name="painel" id="panelSource">
       <summary><h2>Fonte do calor</h2></summary>
-      <p class="hint">de onde vem a "temperatura" de cada pixel antes da paleta.</p>
       <div class="row"><label for="srcRed">luminância → vermelho</label><input type="range" id="srcRed" autocomplete="off" min="0" max="100"><span class="val" id="srcRedVal"></span></div>
       <div class="row"><label for="srcSkin">pele aquece</label><input type="range" id="srcSkin" autocomplete="off" min="0" max="100"><span class="val" id="srcSkinVal"></span></div>
       <div class="row"><label for="srcLights">luzes esquentam</label><input type="range" id="srcLights" autocomplete="off" min="0" max="100"><span class="val" id="srcLightsVal"></span></div>
       <div class="check"><input type="checkbox" id="srcInvert"><label for="srcInvert">inverter (escuro = quente)</label></div>
-      <p class="hint">no canal vermelho a pele tende a ficar mais quente que na luminância. "pele aquece" detecta tons de pele pela cor e esquenta essas áreas mesmo com a fonte invertida. "luzes esquentam" deixa as áreas muito claras (lâmpadas, telas) quentes em qualquer modo.</p>
     </details>
 
     <details class="panel" name="painel" id="panelSeg">
@@ -734,7 +730,6 @@
         <div class="row seg-fast"><label for="tPerson">pessoa</label><input type="range" id="tPerson" autocomplete="off" min="100" max="420"><span class="val" id="tPersonVal"></span></div>
         <div class="row"><label for="tBg">fundo</label><input type="range" id="tBg" autocomplete="off" min="100" max="420"><span class="val" id="tBgVal"></span></div>
         <div class="row"><label for="photoInfl">influência da foto</label><input type="range" id="photoInfl" autocomplete="off" min="0" max="100"><span class="val" id="photoInflVal"></span></div>
-        <p class="hint">a "fonte do calor" continua valendo como variação dentro de cada área: em 0% cada área fica com uma temperatura só.</p>
         <div class="subhead">fundo</div>
         <div class="row"><label for="bgMode">tratamento</label>
           <select id="bgMode">
@@ -747,7 +742,6 @@
         <div class="row" id="bgColorRow"><label for="bgColor">cor</label><input type="color" id="bgColor" aria-label="Cor do fundo"></div>
         <div class="row" id="edgeRow"><label for="edge">borda</label><input type="range" id="edge" autocomplete="off" min="0" max="100"><span class="val" id="edgeVal"></span></div>
       </div>
-      <p class="hint">encontra as pessoas no quadro para a mira e as caixas do OSD e, no térmico, para deixar a pessoa quente sobre o fundo. roda no seu aparelho: o vídeo não sai dele. o primeiro uso baixa o motor da IA (~12 MB) e trava a imagem alguns segundos enquanto prepara.</p>
     </details>
 
     <details class="panel" name="painel" id="panelSensor">
@@ -770,7 +764,6 @@
       <div class="row"><label for="diffusion">difusão</label><input type="range" id="diffusion" autocomplete="off" min="0" max="100"><span class="val" id="diffusionVal"></span></div>
       <div class="row" id="msxRow"><label for="msx">detalhe msx</label><input type="range" id="msx" autocomplete="off" min="0" max="100"><span class="val" id="msxVal"></span></div>
       <div class="row"><label for="bloom">bloom</label><input type="range" id="bloom" autocomplete="off" min="0" max="100"><span class="val" id="bloomVal"></span></div>
-      <p class="hint">câmeras térmicas reais têm de 80 a 640 px e o calor se espalha (difusão). o msx soma as bordas da foto original por cima, como nas câmeras FLIR. o bloom faz as áreas mais quentes (ou mais claras, nos looks de vídeo) vazarem um halo em volta.</p>
     </details>
 
     <details class="panel" name="painel" id="panelRange">
@@ -781,7 +774,6 @@
       <div class="row"><label for="gamma">gama</label><input type="range" id="gamma" autocomplete="off" min="30" max="300"><span class="val" id="gammaVal"></span></div>
       <div class="row"><label for="equalize">equalização</label><input type="range" id="equalize" autocomplete="off" min="0" max="100"><span class="val" id="equalizeVal"></span></div>
       <div class="row"><label for="poster">isotermas</label><input type="range" id="poster" autocomplete="off" min="1" max="16"><span class="val" id="posterVal"></span></div>
-      <p class="hint">nível e span são os controles de uma câmera térmica: o centro e a largura da faixa de temperatura. mexer neles desliga a faixa automática.</p>
     </details>
 
     <details class="panel" name="painel" id="panelPalette">
@@ -805,7 +797,6 @@
       <div class="row"><label for="grainSize">tamanho do grão</label><input type="range" id="grainSize" autocomplete="off" min="1" max="8"><span class="val" id="grainSizeVal"></span></div>
       <div class="row"><label for="vignette">vinheta</label><input type="range" id="vignette" autocomplete="off" min="0" max="100"><span class="val" id="vignetteVal"></span></div>
       <div class="row"><label for="fpn">listras do sensor</label><input type="range" id="fpn" autocomplete="off" min="0" max="100"><span class="val" id="fpnVal"></span></div>
-      <p class="hint">o grão entra na temperatura, antes da paleta, então vira pontilhado colorido. a vinheta esfria os cantos. as listras imitam o padrão fixo de linhas e colunas dos sensores térmicos baratos.</p>
     </details>
 
     <details class="panel" name="painel" id="panelScale">
@@ -821,7 +812,6 @@
       <div class="check"><input type="checkbox" id="scaleAuto"><label for="scaleAuto">temperaturas da cena</label></div>
       <div class="row"><label for="tmin">mín. (°C)</label><input type="number" id="tmin" step="0.1" autocomplete="off"></div>
       <div class="row"><label for="tmax">máx. (°C)</label><input type="number" id="tmax" step="0.1" autocomplete="off"></div>
-      <p class="hint">com "temperaturas da cena" a escala mostra a faixa real da imagem, na mesma régua das temperaturas de "pessoa (ia)".</p>
       <div class="row"><label>unidade</label>
         <div class="toggle-group" id="scaleUnitGroup">
           <button data-v="C" class="active">°C</button>
@@ -864,11 +854,9 @@
         <div class="row"><label for="osdSize">tamanho</label><input type="range" id="osdSize" autocomplete="off" min="50" max="200"><span class="val" id="osdSizeVal"></span></div>
         <div class="check"><input type="checkbox" id="osdLowres"><label for="osdLowres">baixa resolução (720p)</label></div>
         <div class="check"><input type="checkbox" id="osdLive"><label for="osdLive">relógio ao vivo</label></div>
-        <p class="hint" id="osdHint"></p>
         <div class="subhead">textos</div>
         <div id="osdFields"></div>
       </div>
-      <p class="hint">a interface do aparelho por cima da imagem, que muda junto com o look. com a IA ligada dá pra trocar pela interface de vigilância, com as caixas em volta das pessoas.</p>
     </details>
 
     <details class="panel" name="painel" id="panelGrid">
@@ -908,7 +896,6 @@
         <div class="row" hidden data-adv><label for="cellX">posição x</label><input type="range" id="cellX" autocomplete="off" min="0" max="100"><span class="val" id="cellXVal"></span></div>
         <div class="row" hidden data-adv><label for="cellY">posição y</label><input type="range" id="cellY" autocomplete="off" min="0" max="100"><span class="val" id="cellYVal"></span></div>
       </div>
-      <p class="hint">cada quadro mostra um enquadramento da mesma cena, com o próprio OSD. o quadro 1 é ao vivo; os outros vêm atrasados, escalonados até o "atraso máximo", em 10 quadros por segundo como um gravador de cctv (e o relógio de cada um atrasa junto). os enquadramentos miram nas pessoas detectadas pela IA; "sortear" troca todos de uma vez.</p>
     </details>
 
     <footer>
@@ -2560,7 +2547,6 @@ void main(){
     segRun.warm = segRun.warming = false;
     resetSegFrame();
     syncSegUI();
-    syncOsdHint();
     if(mode === 'off'){ setSegStatus(''); return; }
     const m = SEG_MODELS[mode];
     setSegStatus(`carregando modelo ${m.label} (${m.size})…`, true);
@@ -2634,7 +2620,7 @@ void main(){
     const dt = performance.now() - t0;
     // a 1ª execução (compilação) não entra na média
     if(segRun.warm) segRun.ms = segRun.ms ? segRun.ms*0.8 + dt*0.2 : dt;
-    if(!segRun.warm){ segRun.warm = true; syncOsdHint(); }
+    if(!segRun.warm) segRun.warm = true;
     if(now - segRun.statusAt > 1000){
       segRun.statusAt = now;
       const people = det.persons.length;
@@ -3058,11 +3044,6 @@ void main(){
       host.appendChild(row);
     });
   }
-  function syncOsdHint(){
-    const tpl = OSD_TEMPLATES[state.osd.template];
-    $('osdHint').textContent = tpl && tpl.seg && !mask.ready
-      ? 'ligue a detecção em "pessoa (ia)" pra ter as caixas automáticas em volta das pessoas.' : '';
-  }
   // template do OSD pelo look (vigilância no lugar quando a IA está ligada e
   // a opção marcada); trocar de template traz a fonte e a cor dele
   const LOOK_OSD = { thermal:'scan', cctv:'cctv', camcorder:'camcorder', nightvision:'ircam' };
@@ -3080,7 +3061,6 @@ void main(){
   function syncOsdUI(){
     $('osdCommon').style.display = ADVANCED && OSD_TEMPLATES[state.osd.template] ? '' : 'none';
     buildOsdFields();
-    syncOsdHint();
   }
   function loadOsdFont(){
     document.fonts.load(`20px ${OSD_FONTS[state.osd.font].css}`).then(()=>requestRender()).catch(()=>{});
@@ -3121,17 +3101,13 @@ void main(){
   // controles de cada look na tela simples, na ordem; o resto fica no preset
   // (looks sem lista enxuta mostram todos e os painéis de sensor e ruído)
   const LOOK_PANEL = {
-    thermal: { ctls:['palettes', 'palInvert', 'tGain', 'tContrast', 'diffusion', 'poster'], lean:true,
-      hint:'o ganho e o contraste são o nível e o span da câmera térmica: o ganho deixa a cena mais quente, o contraste estreita a faixa de temperatura. isotermas dividem a paleta em faixas de cor.' },
+    thermal: { ctls:['palettes', 'palInvert', 'tGain', 'tContrast', 'diffusion', 'poster'], lean:true },
     nightvision: { ctls:['phosphor', 'invert', 'exposure', 'contrast', 'lines', 'diffusion'], lean:true,
-      labels:{ exposure:'ganho', lines:'tubo' },
-      hint:'o ganho clareia a cena como o intensificador de um óculos de visão noturna; o tubo escurece as bordas num círculo, como a vista pela ocular; a difusão suaviza a imagem.' },
+      labels:{ exposure:'ganho', lines:'tubo' } },
     camcorder: { ctls:['exposure', 'contrast', 'sharpen', 'sat'], lean:true,
-      labels:{ exposure:'ganho' },
-      hint:'o ganho clareia ou escurece a imagem como o ajuste de ganho da câmera; a nitidez é o contorno eletrônico típico do vídeo de camcorder.' },
+      labels:{ exposure:'ganho' } },
     cctv: { ctls:['exposure', 'contrast', 'lines', 'sat'], lean:true,
-      labels:{ exposure:'ganho' },
-      hint:'o ganho clareia ou escurece a imagem; as linhas são o entrelaçado do vídeo analógico; com a saturação baixa os vermelhos continuam aparecendo, como nas câmeras de segurança.' },
+      labels:{ exposure:'ganho' } },
   };
   const LOOK_LABELS = { exposure:'exposição', lines:'linhas' };
   function syncLookUI(){
@@ -3148,7 +3124,6 @@ void main(){
     cfg.ctls.forEach(k=>{ const el = host.querySelector(`[data-k="${k}"]`); el.style.display = ''; host.appendChild(el); });
     $('lkExposureLabel').textContent = (cfg.labels && cfg.labels.exposure) || LOOK_LABELS.exposure;
     $('lkLinesLabel').textContent = (cfg.labels && cfg.labels.lines) || LOOK_LABELS.lines;
-    $('lookHint').textContent = cfg.hint;
     // look enxuto: sensor e ruído ficam no preset, fora da vista
     $('panelSensor').style.display = $('panelNoise').style.display = cfg.lean && !ADVANCED ? 'none' : '';
   }
