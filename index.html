@@ -838,7 +838,10 @@
 
     <details class="panel" name="painel">
       <summary><h2>OSD</h2></summary>
-      <div class="row"><label for="osdTemplate">template</label>
+      <div class="check"><input type="checkbox" id="osdOn"><label for="osdOn">mostrar OSD</label></div>
+      <div class="check" id="osdSurvRow" style="display:none;"><input type="checkbox" id="osdSurv"><label for="osdSurv">vigilância IA</label></div>
+      <!-- template escolhido à mão, fonte, cor, textos…: ficam para o "avançado" -->
+      <div class="row" hidden><label for="osdTemplate">template</label>
         <select id="osdTemplate">
           <option value="none">nenhum</option>
           <option value="ircam">ir-cam (térmico)</option>
@@ -864,7 +867,7 @@
         <div class="subhead">textos</div>
         <div id="osdFields"></div>
       </div>
-      <p class="hint">a interface do aparelho por cima da imagem. com o relógio ao vivo, data e hora seguem o relógio de verdade e o timecode corre junto com o vídeo; os outros textos são editáveis.</p>
+      <p class="hint">a interface do aparelho por cima da imagem, que muda junto com o look. com a IA ligada dá pra trocar pela interface de vigilância, com as caixas em volta das pessoas.</p>
     </details>
 
     <details class="panel" name="painel" id="panelGrid">
@@ -986,7 +989,8 @@
     noise: { grain:25, size:1, vignette:0, fpn:0 },
     scale: { show:false, auto:true, pos:'right', tmin:20, tmax:38, unit:'C', text:'light' },
     // textos de cada template ficam em text (preenchido com os padrões em OSD_TEMPLATES)
-    osd: { template:'none', font:'pixel', color:'#7dff9a', size:100, lowres:false, live:true, text:{} },
+    // on = mostrar; o template vem do look (LOOK_OSD), ou vigilância (surv) com a IA ligada
+    osd: { on:true, surv:false, template:'none', font:'pixel', color:'#7dff9a', size:100, lowres:false, live:true, text:{} },
     // look da imagem; grade = ajustes de cor do look de vídeo atual
     look: 'thermal',
     grade: null,
@@ -2829,9 +2833,9 @@ void main(){
   bindCheck('srcInvert', ()=>state.src.invert, v=>state.src.invert = v);
 
   // pessoa (ia): temperaturas em décimos de °C no slider
-  const segModeCtl = bindToggle('segModeGroup', ()=>state.seg.mode, v=>{ state.seg.mode = v; segOnEl.checked = v !== 'off'; runSegmentation(); });
+  const segModeCtl = bindToggle('segModeGroup', ()=>state.seg.mode, v=>{ state.seg.mode = v; segOnEl.checked = v !== 'off'; runSegmentation(); applyOsd(); });
   // tela simples: liga/desliga no modo rápido
-  const segOnEl = bindCheck('segOn', ()=>state.seg.mode !== 'off', v=>{ state.seg.mode = v ? 'fast' : 'off'; segModeCtl.sync(); runSegmentation(); });
+  const segOnEl = bindCheck('segOn', ()=>state.seg.mode !== 'off', v=>{ state.seg.mode = v ? 'fast' : 'off'; segModeCtl.sync(); runSegmentation(); applyOsd(); });
   // calor da pessoa: 0–100% ↔ 25–41 °C (50% = 33 °C, o padrão)
   bindRange('segHeat', ()=>Math.round((state.seg.tPerson - 25)/0.16), v=>{ state.seg.tPerson = 25 + v*0.16; }, pct);
   bindToggle('segBgGroup', ()=>String(Math.min(state.seg.bg, 2)), v=>{ state.seg.bg = +v; syncSegUI(); });
@@ -3041,8 +3045,22 @@ void main(){
     $('osdHint').textContent = tpl && tpl.seg && !mask.ready
       ? 'ligue a detecção em "pessoa (ia)" pra ter as caixas automáticas em volta das pessoas.' : '';
   }
+  // template do OSD pelo look (vigilância no lugar quando a IA está ligada e
+  // a opção marcada); trocar de template traz a fonte e a cor dele
+  const LOOK_OSD = { thermal:'scan', cctv:'cctv', camcorder:'camcorder', nightvision:'ircam' };
+  function applyOsd(){
+    const segOn = state.seg.mode !== 'off';
+    $('osdSurvRow').style.display = segOn ? '' : 'none';
+    const tpl = !state.osd.on ? 'none' : segOn && state.osd.surv ? 'surv' : (LOOK_OSD[state.look] || 'none');
+    if(tpl === state.osd.template) return;
+    state.osd.template = osdTemplate.value = tpl;
+    const t = OSD_TEMPLATES[tpl];
+    if(t){ state.osd.font = osdFontSel.value = t.font; state.osd.color = osdColor.value = t.color; }
+    syncOsdUI();
+    loadOsdFont();
+  }
   function syncOsdUI(){
-    $('osdCommon').style.display = OSD_TEMPLATES[state.osd.template] ? '' : 'none';
+    $('osdCommon').style.display = 'none';
     buildOsdFields();
     syncOsdHint();
   }
@@ -3050,6 +3068,9 @@ void main(){
     document.fonts.load(`20px ${OSD_FONTS[state.osd.font].css}`).then(()=>requestRender()).catch(()=>{});
   }
   syncOsdUI();
+  bindCheck('osdOn', ()=>state.osd.on, v=>{ state.osd.on = v; applyOsd(); });
+  bindCheck('osdSurv', ()=>state.osd.surv, v=>{ state.osd.surv = v; applyOsd(); });
+  applyOsd();
 
   // look: troca sensor/ruído/cores junto, guardando os do look anterior
   const lookStore = {};
@@ -3067,6 +3088,7 @@ void main(){
     sharedCtls.forEach(c=>c.sync());
     gradeCtls.forEach(c=>c.sync());
     syncLookUI();
+    applyOsd();
     if(lookCtl) lookCtl.sync();
     showToast(LOOK_NAMES[next]);
   }
