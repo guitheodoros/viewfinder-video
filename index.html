@@ -975,8 +975,8 @@
   // ajustes iniciais dos looks de vídeo (sensor e ruído são trocados junto)
   const LOOK_DEFAULTS = {
     cctv: {
-      sensor:{ res:640, pixel:false, diffusion:6, msx:0, bloom:45 },
-      noise:{ grain:14, size:1, vignette:15, fpn:10 },
+      sensor:{ res:640, pixel:false, diffusion:8, msx:0, bloom:45 },
+      noise:{ grain:25, size:1, vignette:30, fpn:10 },
       grade:{ sat:35, temp:-55, tint:5, exposure:12, contrast:-10, lift:14, keepRed:80, sharpen:0, lines:15 },
     },
     // visão noturna: intensificador verde, luzes estourando, grão cintilante
@@ -3048,8 +3048,9 @@ void main(){
     camcorder: { ctls:['exposure', 'contrast', 'sharpen', 'sat'], lean:true,
       labels:{ exposure:'ganho' },
       hint:'o ganho clareia ou escurece a imagem como o ajuste de ganho da câmera; a nitidez é o contorno eletrônico típico do vídeo de camcorder.' },
-    cctv: { ctls:['sat', 'temp', 'tint', 'exposure', 'contrast', 'lift', 'keepRed', 'sharpen', 'lines'], lean:false,
-      hint:'"manter vermelhos" segura a cor dos vermelhos mesmo com a imagem dessaturada. as linhas são o entrelaçado do vídeo.' },
+    cctv: { ctls:['exposure', 'contrast', 'sharpen', 'sat'], lean:true,
+      labels:{ exposure:'ganho' },
+      hint:'o ganho clareia ou escurece a imagem; com a saturação baixa os vermelhos continuam aparecendo, como nas câmeras de segurança.' },
   };
   const LOOK_LABELS = { exposure:'exposição', lines:'linhas' };
   function syncLookUI(){
