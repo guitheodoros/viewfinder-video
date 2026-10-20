@@ -705,7 +705,20 @@
 
     <details class="panel" name="painel" id="panelSeg">
       <summary><h2>Pessoa (IA)</h2></summary>
-      <div class="toggle-group" id="segModeGroup" style="margin-bottom:8px;">
+      <div class="check"><input type="checkbox" id="segOn"><label for="segOn">detectar pessoas</label></div>
+      <!-- tela simples do térmico com a IA ligada -->
+      <div id="segSimple" style="display:none;">
+        <div class="row"><label for="segHeat">calor da pessoa</label><input type="range" id="segHeat" autocomplete="off" min="0" max="100"><span class="val" id="segHeatVal"></span></div>
+        <div class="row"><label>fundo</label>
+          <div class="toggle-group" id="segBgGroup">
+            <button data-v="0">térmico</button>
+            <button data-v="1">foto</button>
+            <button data-v="2">azul</button>
+          </div>
+        </div>
+      </div>
+      <!-- modo detalhado e temperaturas por área: ficam para o "avançado" -->
+      <div class="toggle-group" id="segModeGroup" style="display:none;margin-bottom:8px;">
         <button data-v="off" class="active">desligada</button>
         <button data-v="fast">rápida</button>
         <button data-v="detail">detalhada</button>
@@ -733,7 +746,7 @@
         <div class="row" id="bgColorRow"><label for="bgColor">cor</label><input type="color" id="bgColor" aria-label="Cor do fundo"></div>
         <div class="row" id="edgeRow"><label for="edge">borda</label><input type="range" id="edge" autocomplete="off" min="0" max="100"><span class="val" id="edgeVal"></span></div>
       </div>
-      <p class="hint">roda no seu aparelho (MediaPipe), quadro a quadro: o vídeo não sai dele. a rápida (0,25 MB) só recorta a pessoa; a detalhada (16 MB) separa cabelo, pele e roupa e pesa mais no celular. o primeiro uso baixa o motor da IA (~12 MB) e trava a imagem alguns segundos enquanto prepara.</p>
+      <p class="hint">encontra as pessoas no quadro para a mira e as caixas do OSD e, no térmico, para deixar a pessoa quente sobre o fundo. roda no seu aparelho: o vídeo não sai dele. o primeiro uso baixa o motor da IA (~12 MB) e trava a imagem alguns segundos enquanto prepara.</p>
     </details>
 
     <details class="panel" name="painel" id="panelSensor">
@@ -2776,7 +2789,8 @@ void main(){
   function syncSegUI(){
     const mode = state.seg.mode;
     // temperaturas e fundo só valem no look térmico
-    $('segControls').style.display = mode === 'off' || state.look !== 'thermal' ? 'none' : '';
+    $('segControls').style.display = 'none';
+    $('segSimple').style.display = mode === 'off' || state.look !== 'thermal' ? 'none' : '';
     document.querySelectorAll('.seg-detail').forEach(el=>el.style.display = mode === 'detail' ? '' : 'none');
     document.querySelectorAll('.seg-fast').forEach(el=>el.style.display = mode === 'fast' ? '' : 'none');
     $('bgColorRow').style.display = state.seg.bg === 3 ? '' : 'none';
@@ -2815,7 +2829,12 @@ void main(){
   bindCheck('srcInvert', ()=>state.src.invert, v=>state.src.invert = v);
 
   // pessoa (ia): temperaturas em décimos de °C no slider
-  bindToggle('segModeGroup', ()=>state.seg.mode, v=>{ state.seg.mode = v; runSegmentation(); });
+  const segModeCtl = bindToggle('segModeGroup', ()=>state.seg.mode, v=>{ state.seg.mode = v; segOnEl.checked = v !== 'off'; runSegmentation(); });
+  // tela simples: liga/desliga no modo rápido
+  const segOnEl = bindCheck('segOn', ()=>state.seg.mode !== 'off', v=>{ state.seg.mode = v ? 'fast' : 'off'; segModeCtl.sync(); runSegmentation(); });
+  // calor da pessoa: 0–100% ↔ 25–41 °C (50% = 33 °C, o padrão)
+  bindRange('segHeat', ()=>Math.round((state.seg.tPerson - 25)/0.16), v=>{ state.seg.tPerson = 25 + v*0.16; }, pct);
+  bindToggle('segBgGroup', ()=>String(Math.min(state.seg.bg, 2)), v=>{ state.seg.bg = +v; syncSegUI(); });
   const degC = v => (v/10).toFixed(1) + '°';
   [['tFace','tFace'],['tBody','tBody'],['tCloth','tCloth'],['tHair','tHair'],['tPerson','tPerson'],['tBg','tBg']].forEach(([id, key])=>{
     bindRange(id, ()=>Math.round(state.seg[key]*10), v=>state.seg[key] = v/10, degC);
@@ -3078,7 +3097,7 @@ void main(){
   function syncLookUI(){
     const thermal = state.look === 'thermal';
     ['panelSource', 'panelRange', 'panelPalette', 'panelScale', 'msxRow'].forEach(id=>{ $(id).style.display = thermal ? '' : 'none'; });
-    $('segControls').style.display = thermal && state.seg.mode !== 'off' ? '' : 'none';
+    $('segSimple').style.display = thermal && state.seg.mode !== 'off' ? '' : 'none';
     $('panelLook').style.display = '';
     const cfg = LOOK_PANEL[state.look];
     if(!cfg) return;
