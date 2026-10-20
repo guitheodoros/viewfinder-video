@@ -665,23 +665,25 @@
 
     <details class="panel" name="painel" id="panelLook" style="display:none;">
       <summary><h2>Ajustes do look</h2></summary>
-      <div class="toggle-group nv-only" id="nvPhosphorGroup" style="margin-bottom:10px;" role="group" aria-label="Cor da imagem">
+      <!-- cada look mostra só os controles da sua lista (LOOK_PANEL), na ordem dela -->
+      <div id="lookCtls">
+      <div class="toggle-group" data-k="phosphor" id="nvPhosphorGroup" style="margin-bottom:10px;" role="group" aria-label="Cor da imagem">
         <button data-v="green" class="active">verde</button>
         <button data-v="white">p&amp;b</button>
       </div>
-      <div class="check nv-only"><input type="checkbox" id="nvInvert"><label for="nvInvert">inverter (negativo)</label></div>
-      <div class="row"><label for="lkSat">saturação</label><input type="range" id="lkSat" autocomplete="off" min="0" max="200"><span class="val" id="lkSatVal"></span></div>
-      <div class="row"><label for="lkTemp">frio ↔ quente</label><input type="range" id="lkTemp" autocomplete="off" min="-100" max="100"><span class="val" id="lkTempVal"></span></div>
-      <div class="row"><label for="lkTint">magenta ↔ verde</label><input type="range" id="lkTint" autocomplete="off" min="-100" max="100"><span class="val" id="lkTintVal"></span></div>
-      <div class="row"><label for="lkExposure" id="lkExposureLabel">exposição</label><input type="range" id="lkExposure" autocomplete="off" min="-50" max="50"><span class="val" id="lkExposureVal"></span></div>
-      <div class="row"><label for="lkContrast">contraste</label><input type="range" id="lkContrast" autocomplete="off" min="-50" max="50"><span class="val" id="lkContrastVal"></span></div>
-      <div class="row"><label for="lkLift">pretos lavados</label><input type="range" id="lkLift" autocomplete="off" min="0" max="50"><span class="val" id="lkLiftVal"></span></div>
-      <div class="row"><label for="lkKeepRed">manter vermelhos</label><input type="range" id="lkKeepRed" autocomplete="off" min="0" max="100"><span class="val" id="lkKeepRedVal"></span></div>
-      <div class="row"><label for="lkSharpen">nitidez</label><input type="range" id="lkSharpen" autocomplete="off" min="0" max="100"><span class="val" id="lkSharpenVal"></span></div>
-      <div class="row"><label for="lkLines" id="lkLinesLabel">linhas</label><input type="range" id="lkLines" autocomplete="off" min="0" max="100"><span class="val" id="lkLinesVal"></span></div>
-      <div class="row nv-only"><label for="lkDiffusion">difusão</label><input type="range" id="lkDiffusion" autocomplete="off" min="0" max="100"><span class="val" id="lkDiffusionVal"></span></div>
-      <p class="hint not-nv">"manter vermelhos" segura a cor dos vermelhos mesmo com a imagem dessaturada. no cctv as linhas são o entrelaçado do vídeo; no camcorder, a grade de subpixels da tela LCD.</p>
-      <p class="hint nv-only">o ganho clareia a cena como o intensificador de um óculos de visão noturna; o tubo escurece as bordas num círculo, como a vista pela ocular; a difusão suaviza a imagem.</p>
+      <div class="check" data-k="invert"><input type="checkbox" id="nvInvert"><label for="nvInvert">inverter (negativo)</label></div>
+      <div class="row" data-k="sat"><label for="lkSat">saturação</label><input type="range" id="lkSat" autocomplete="off" min="0" max="200"><span class="val" id="lkSatVal"></span></div>
+      <div class="row" data-k="temp"><label for="lkTemp">frio ↔ quente</label><input type="range" id="lkTemp" autocomplete="off" min="-100" max="100"><span class="val" id="lkTempVal"></span></div>
+      <div class="row" data-k="tint"><label for="lkTint">magenta ↔ verde</label><input type="range" id="lkTint" autocomplete="off" min="-100" max="100"><span class="val" id="lkTintVal"></span></div>
+      <div class="row" data-k="exposure"><label for="lkExposure" id="lkExposureLabel">exposição</label><input type="range" id="lkExposure" autocomplete="off" min="-50" max="50"><span class="val" id="lkExposureVal"></span></div>
+      <div class="row" data-k="contrast"><label for="lkContrast">contraste</label><input type="range" id="lkContrast" autocomplete="off" min="-50" max="50"><span class="val" id="lkContrastVal"></span></div>
+      <div class="row" data-k="lift"><label for="lkLift">pretos lavados</label><input type="range" id="lkLift" autocomplete="off" min="0" max="50"><span class="val" id="lkLiftVal"></span></div>
+      <div class="row" data-k="keepRed"><label for="lkKeepRed">manter vermelhos</label><input type="range" id="lkKeepRed" autocomplete="off" min="0" max="100"><span class="val" id="lkKeepRedVal"></span></div>
+      <div class="row" data-k="sharpen"><label for="lkSharpen">nitidez</label><input type="range" id="lkSharpen" autocomplete="off" min="0" max="100"><span class="val" id="lkSharpenVal"></span></div>
+      <div class="row" data-k="lines"><label for="lkLines" id="lkLinesLabel">linhas</label><input type="range" id="lkLines" autocomplete="off" min="0" max="100"><span class="val" id="lkLinesVal"></span></div>
+      <div class="row" data-k="diffusion"><label for="lkDiffusion">difusão</label><input type="range" id="lkDiffusion" autocomplete="off" min="0" max="100"><span class="val" id="lkDiffusionVal"></span></div>
+      </div>
+      <p class="hint" id="lookHint"></p>
     </details>
 
     <details class="panel" name="painel" id="panelSource">
@@ -984,9 +986,9 @@
       grade:{ sat:0, temp:0, tint:0, exposure:25, contrast:15, lift:15, keepRed:0, sharpen:20, lines:0, phosphor:'green', invert:false },
     },
     camcorder: {
-      sensor:{ res:0, pixel:false, diffusion:0, msx:0, bloom:10 },
-      noise:{ grain:6, size:1, vignette:25, fpn:0 },
-      grade:{ sat:120, temp:30, tint:0, exposure:0, contrast:25, lift:2, keepRed:0, sharpen:55, lines:35 },
+      sensor:{ res:0, pixel:false, diffusion:0, msx:0, bloom:20 },
+      noise:{ grain:25, size:1, vignette:25, fpn:0 },
+      grade:{ sat:130, temp:30, tint:0, exposure:0, contrast:25, lift:2, keepRed:0, sharpen:55, lines:25 },
     },
   };
   state.grade = { ...LOOK_DEFAULTS.cctv.grade };
@@ -3037,23 +3039,34 @@ void main(){
     if(i >= 0 && i < LOOKS.length) switchLook(LOOKS[i]);
   }
   // painéis que só fazem sentido no térmico somem nos looks de vídeo
+  // controles de cada look na tela simples, na ordem; o resto fica no preset
+  // (looks sem lista enxuta mostram todos e os painéis de sensor e ruído)
+  const LOOK_PANEL = {
+    nightvision: { ctls:['phosphor', 'invert', 'exposure', 'contrast', 'lines', 'diffusion'], lean:true,
+      labels:{ exposure:'ganho', lines:'tubo' },
+      hint:'o ganho clareia a cena como o intensificador de um óculos de visão noturna; o tubo escurece as bordas num círculo, como a vista pela ocular; a difusão suaviza a imagem.' },
+    camcorder: { ctls:['exposure', 'contrast', 'sharpen', 'sat'], lean:true,
+      labels:{ exposure:'ganho' },
+      hint:'o ganho clareia ou escurece a imagem como o ajuste de ganho da câmera; a nitidez é o contorno eletrônico típico do vídeo de camcorder.' },
+    cctv: { ctls:['sat', 'temp', 'tint', 'exposure', 'contrast', 'lift', 'keepRed', 'sharpen', 'lines'], lean:false,
+      hint:'"manter vermelhos" segura a cor dos vermelhos mesmo com a imagem dessaturada. as linhas são o entrelaçado do vídeo.' },
+  };
+  const LOOK_LABELS = { exposure:'exposição', lines:'linhas' };
   function syncLookUI(){
     const thermal = state.look === 'thermal';
     ['panelSource', 'panelRange', 'panelPalette', 'panelScale', 'msxRow'].forEach(id=>{ $(id).style.display = thermal ? '' : 'none'; });
     $('panelLook').style.display = thermal ? 'none' : '';
     $('segControls').style.display = thermal && state.seg.mode !== 'off' ? '' : 'none';
-    $('lkKeepRed').closest('.row').style.display = state.look === 'cctv' ? '' : 'none';
-    // night vision é monocromático: sem saturação nem balanço de branco; "linhas" vira o tubo
-    const nv = state.look === 'nightvision';
-    ['lkSat', 'lkTemp', 'lkTint'].forEach(id=>{ $(id).closest('.row').style.display = nv ? 'none' : ''; });
-    document.querySelectorAll('.nv-only').forEach(el=>{ el.style.display = nv ? '' : 'none'; });
-    document.querySelectorAll('.not-nv').forEach(el=>{ el.style.display = nv ? 'none' : ''; });
-    // night vision enxuto: pretos lavados e nitidez ficam no preset; sensor e
-    // ruído saem da vista (a difusão vem pra dentro dos ajustes do look)
-    ['lkLift', 'lkSharpen'].forEach(id=>{ $(id).closest('.row').style.display = nv ? 'none' : ''; });
-    $('panelSensor').style.display = $('panelNoise').style.display = nv ? 'none' : '';
-    $('lkExposureLabel').textContent = nv ? 'ganho' : 'exposição';
-    $('lkLinesLabel').textContent = nv ? 'tubo' : 'linhas';
+    const cfg = LOOK_PANEL[state.look];
+    if(!cfg) return;
+    const host = $('lookCtls');
+    host.querySelectorAll('[data-k]').forEach(el=>{ el.style.display = 'none'; });
+    cfg.ctls.forEach(k=>{ const el = host.querySelector(`[data-k="${k}"]`); el.style.display = ''; host.appendChild(el); });
+    $('lkExposureLabel').textContent = (cfg.labels && cfg.labels.exposure) || LOOK_LABELS.exposure;
+    $('lkLinesLabel').textContent = (cfg.labels && cfg.labels.lines) || LOOK_LABELS.lines;
+    $('lookHint').textContent = cfg.hint;
+    // look enxuto: sensor e ruído ficam no preset, fora da vista
+    $('panelSensor').style.display = $('panelNoise').style.display = cfg.lean ? 'none' : '';
   }
   const lookCtl = bindToggle('lookGroup', ()=>state.look, v=>switchLook(v));
   [['lkSat','sat', pct], ['lkTemp','temp'], ['lkTint','tint'], ['lkExposure','exposure'], ['lkContrast','contrast'],
