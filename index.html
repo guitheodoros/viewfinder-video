@@ -616,7 +616,7 @@
   }
   #sheet footer{ border-top-color:rgba(255,255,255,.14); }
   @media (min-width: 900px){
-    /* desktop: a gaveta flutua à direita por cima da imagem; o HUD se afasta dela */
+    /* desktop: a gaveta flutua à direita; a imagem e o HUD ficam no espaço à esquerda */
     #sheet{ position:absolute; top:16px; right:16px; width:340px; max-height:calc(100% - 32px); border-radius:20px; overflow:hidden; border-left-width:1px; }
     #app.sheet-open .hud{ right:372px; }
   }
@@ -3559,14 +3559,20 @@ void main(){
     fitFrame();
   }
   // contain dentro do visor
-  // contain no visor; a gaveta de vidro abre por cima, sem mudar a imagem
+  // contain no visor. No celular a gaveta de vidro abre por cima da imagem;
+  // no desktop ela flutua à direita e a imagem inteira cabe no espaço que
+  // sobra à esquerda (sem nenhuma parte coberta)
   function fitFrame(){
     if(!RW || !RH) return;
-    const vw = viewport.clientWidth, vh = viewport.clientHeight;
+    const docked = typeof sheet !== 'undefined' && sheet.dataset.open === 'true' && isDesktop();
+    // com a gaveta: 16 px de folga à esquerda e entre a imagem e a gaveta
+    const pad = docked ? 16 : 0, side = docked ? 372 : 0;
+    const vw = viewport.clientWidth - side - pad, vh = viewport.clientHeight;
     let w = vw, h = vw*RH/RW;
     if(h > vh){ h = vh; w = vh*RW/RH; }
     frame.style.width = Math.round(w) + 'px';
     frame.style.height = Math.round(h) + 'px';
+    frame.style.left = Math.round(pad + vw/2) + 'px';
   }
   new ResizeObserver(fitFrame).observe(viewport);
   // durante a gravação o tamanho do vídeo fica travado
@@ -4302,6 +4308,7 @@ void main(){
     sheet.dataset.open = open;
     app.classList.toggle('sheet-open', open);
     btnSheet.setAttribute('aria-expanded', open);
+    fitFrame();
   }
   btnSheet.addEventListener('click', ()=>setSheet(sheet.dataset.open !== 'true'));
   $('btnSheetClose').addEventListener('click', ()=>setSheet(false));
