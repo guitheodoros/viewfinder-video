@@ -681,7 +681,12 @@
       <div class="row" data-k="keepRed"><label for="lkKeepRed">manter vermelhos</label><input type="range" id="lkKeepRed" autocomplete="off" min="0" max="100"><span class="val" id="lkKeepRedVal"></span></div>
       <div class="row" data-k="sharpen"><label for="lkSharpen">nitidez</label><input type="range" id="lkSharpen" autocomplete="off" min="0" max="100"><span class="val" id="lkSharpenVal"></span></div>
       <div class="row" data-k="lines"><label for="lkLines" id="lkLinesLabel">linhas</label><input type="range" id="lkLines" autocomplete="off" min="0" max="100"><span class="val" id="lkLinesVal"></span></div>
+      <div class="pal-grid" data-k="palettes" id="lkPalGrid" role="group" aria-label="Paleta"></div>
+      <div class="check" data-k="palInvert"><input type="checkbox" id="lkPalInvert"><label for="lkPalInvert">inverter (negativo)</label></div>
+      <div class="row" data-k="tGain"><label for="lkTGain">ganho</label><input type="range" id="lkTGain" autocomplete="off" min="-50" max="50"><span class="val" id="lkTGainVal"></span></div>
+      <div class="row" data-k="tContrast"><label for="lkTContrast">contraste</label><input type="range" id="lkTContrast" autocomplete="off" min="-50" max="50"><span class="val" id="lkTContrastVal"></span></div>
       <div class="row" data-k="diffusion"><label for="lkDiffusion">difusão</label><input type="range" id="lkDiffusion" autocomplete="off" min="0" max="100"><span class="val" id="lkDiffusionVal"></span></div>
+      <div class="row" data-k="poster"><label for="lkPoster">isotermas</label><input type="range" id="lkPoster" autocomplete="off" min="1" max="16"><span class="val" id="lkPosterVal"></span></div>
       </div>
       <p class="hint" id="lookHint"></p>
     </details>
@@ -955,13 +960,15 @@
     view: { aspect:'auto', perf:'auto', zoom:1 },
     // gravação: resolução e som (microfone na câmera, som do arquivo)
     rec: { res:720, sound:true },
-    src: { red:0, skin:0, lights:0, invert:false },
+    src: { red:28, skin:30, lights:0, invert:false },
     // temperaturas em °C; a régua calor↔°C é T_MIN_C..T_MIN_C+T_SPAN_C
     seg: { mode:'off', tFace:36.5, tBody:34.5, tCloth:29, tHair:27.5, tPerson:33, tBg:20, photo:35, bg:0, bgColor:'#2f3bd3', edge:50 },
     sensor: { res:320, pixel:false, diffusion:15, msx:25, bloom:0 },
-    range: { auto:true, level:50, span:100, gamma:1, eq:0, poster:0 },
+    // faixa fixa (nível/span do preset); ganho e contraste do térmico mexem a partir dela
+    range: { auto:false, level:36, span:67, gamma:0.7, eq:0, poster:0 },
+    thermal: { gain:0, contrast:0 },
     palette: { preset:"ironbow", stops:evenStops(PRESETS[0].stops), invert:false, cycles:1, offset:0 },
-    noise: { grain:8, size:1, vignette:0, fpn:0 },
+    noise: { grain:25, size:1, vignette:0, fpn:0 },
     scale: { show:false, auto:true, pos:'right', tmin:20, tmax:38, unit:'C', text:'light' },
     // textos de cada template ficam em text (preenchido com os padrões em OSD_TEMPLATES)
     osd: { template:'none', font:'pixel', color:'#7dff9a', size:100, lowres:false, live:true, text:{} },
@@ -1740,9 +1747,11 @@ void main(){
     return sd;
   }
 
+  // ganho desce o nível (cena mais quente/clara); contraste estreita o span
   function currentLoHi(){
     if(state.range.auto) return [stats.lo, stats.hi];
-    const l = state.range.level/100, s = state.range.span/100;
+    const l = (state.range.level - state.thermal.gain)/100;
+    const s = Math.max(0.01, state.range.span/100*(1 - state.thermal.contrast/100));
     return [l - s/2, l + s/2];
   }
 
@@ -2851,11 +2860,14 @@ void main(){
   }
   bindRange('gamma', ()=>Math.round(state.range.gamma*100), v=>state.range.gamma = v/100, v=>(v/100).toFixed(2));
   bindRange('equalize', ()=>state.range.eq, v=>state.range.eq = v, pct);
-  bindRange('poster', ()=>Math.max(1, state.range.poster), v=>state.range.poster = v < 2 ? 0 : v, v=>v < 2 ? 'off' : String(v));
+  const posterFmt = v=>v < 2 ? 'off' : String(v);
+  const posterCtls = [];
+  posterCtls.push(bindRange('poster', ()=>Math.max(1, state.range.poster), v=>{ state.range.poster = v < 2 ? 0 : v; posterCtls.forEach(c=>c.sync()); }, posterFmt));
+  posterCtls.push(bindRange('lkPoster', ()=>Math.max(1, state.range.poster), v=>{ state.range.poster = v < 2 ? 0 : v; posterCtls.forEach(c=>c.sync()); }, posterFmt));
 
   // paleta
   const palGrid = $('palGrid');
-  PRESETS.forEach(p=>{
+  function palButton(p, host){
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'pal-btn'; b.dataset.key = p.key;
     b.innerHTML = `<span>${p.name}</span><span class="strip" style="background:linear-gradient(90deg,${p.stops.join(',')})"></span>`;
@@ -2865,10 +2877,13 @@ void main(){
       buildStops();
       paletteChanged();
     });
-    palGrid.appendChild(b);
-  });
+    host.appendChild(b);
+  }
+  PRESETS.forEach(p=>palButton(p, palGrid));
+  // a tela simples do térmico mostra só três paletas
+  ['ironbow', 'arctic', 'nostalgia'].forEach(k=>palButton(PRESETS.find(p=>p.key === k), $('lkPalGrid')));
   function markPalette(){
-    palGrid.querySelectorAll('.pal-btn').forEach(b=>{
+    document.querySelectorAll('.pal-btn').forEach(b=>{
       const on = b.dataset.key === state.palette.preset;
       b.classList.toggle('active', on);
       b.setAttribute('aria-pressed', on);
@@ -2929,7 +2944,10 @@ void main(){
     buildStops();
     customPalette();
   });
-  bindCheck('palInvert', ()=>state.palette.invert, v=>state.palette.invert = v);
+  const palInvertEl = bindCheck('palInvert', ()=>state.palette.invert, v=>{ state.palette.invert = v; lkPalInvertEl.checked = v; });
+  const lkPalInvertEl = bindCheck('lkPalInvert', ()=>state.palette.invert, v=>{ state.palette.invert = v; palInvertEl.checked = v; });
+  bindRange('lkTGain', ()=>state.thermal.gain, v=>state.thermal.gain = v, v=>(v > 0 ? '+' : '') + v);
+  bindRange('lkTContrast', ()=>state.thermal.contrast, v=>state.thermal.contrast = v, v=>(v > 0 ? '+' : '') + v);
   bindRange('cycles', ()=>Math.round(state.palette.cycles*2), v=>state.palette.cycles = v/2, v=>(v/2).toFixed(1) + '×');
   bindRange('offset', ()=>state.palette.offset, v=>state.palette.offset = v, pct);
 
@@ -3042,6 +3060,8 @@ void main(){
   // controles de cada look na tela simples, na ordem; o resto fica no preset
   // (looks sem lista enxuta mostram todos e os painéis de sensor e ruído)
   const LOOK_PANEL = {
+    thermal: { ctls:['palettes', 'palInvert', 'tGain', 'tContrast', 'diffusion', 'poster'], lean:true,
+      hint:'o ganho e o contraste são o nível e o span da câmera térmica: o ganho deixa a cena mais quente, o contraste estreita a faixa de temperatura. isotermas dividem a paleta em faixas de cor.' },
     nightvision: { ctls:['phosphor', 'invert', 'exposure', 'contrast', 'lines', 'diffusion'], lean:true,
       labels:{ exposure:'ganho', lines:'tubo' },
       hint:'o ganho clareia a cena como o intensificador de um óculos de visão noturna; o tubo escurece as bordas num círculo, como a vista pela ocular; a difusão suaviza a imagem.' },
@@ -3056,10 +3076,12 @@ void main(){
   function syncLookUI(){
     const thermal = state.look === 'thermal';
     ['panelSource', 'panelRange', 'panelPalette', 'panelScale', 'msxRow'].forEach(id=>{ $(id).style.display = thermal ? '' : 'none'; });
-    $('panelLook').style.display = thermal ? 'none' : '';
     $('segControls').style.display = thermal && state.seg.mode !== 'off' ? '' : 'none';
+    $('panelLook').style.display = '';
     const cfg = LOOK_PANEL[state.look];
     if(!cfg) return;
+    // térmico enxuto: fonte do calor, faixa, paleta completa e escala ficam no preset
+    if(thermal && cfg.lean) ['panelSource', 'panelRange', 'panelPalette', 'panelScale'].forEach(id=>{ $(id).style.display = 'none'; });
     const host = $('lookCtls');
     host.querySelectorAll('[data-k]').forEach(el=>{ el.style.display = 'none'; });
     cfg.ctls.forEach(k=>{ const el = host.querySelector(`[data-k="${k}"]`); el.style.display = ''; host.appendChild(el); });
