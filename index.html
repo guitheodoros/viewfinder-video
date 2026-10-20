@@ -616,19 +616,9 @@
   }
   #sheet footer{ border-top-color:rgba(255,255,255,.14); }
   @media (min-width: 900px){
-    /* desktop: o menu é uma faixa de vidro na base, com as seções lado a lado
-       (todas abertas); a imagem e os controles do HUD sobem pro espaço acima */
-    #sheet{
-      position:absolute; left:50%; bottom:16px; transform:translateX(-50%);
-      width:min(1180px, calc(100% - 32px)); max-height:46%; border-radius:20px; overflow:hidden; border-left-width:1px;
-    }
-    .sheet-head{ padding:10px 16px; }
-    .sheet-body{ display:flex; gap:10px; align-items:flex-start; overflow-x:auto; overflow-y:auto; padding:12px 16px 14px; }
-    #sheet .panel{ flex:1 1 210px; min-width:210px; margin-bottom:0; }
-    #sheet .panel > summary{ pointer-events:none; }
-    #sheet .panel > summary h2::after{ display:none; }
-    #sheet footer{ display:none; }
-    #app.sheet-open .hud-bottom{ bottom:calc(var(--dock-h, 0px) + 6px); padding-bottom:0; padding-top:6px; gap:10px; }
+    /* desktop: a gaveta flutua à direita por cima da imagem; o HUD se afasta dela */
+    #sheet{ position:absolute; top:16px; right:16px; width:340px; max-height:calc(100% - 32px); border-radius:20px; overflow:hidden; border-left-width:1px; }
+    #app.sheet-open .hud{ right:372px; }
   }
   @media (max-width: 899px){
     #sheet{ border-radius:22px 22px 0 0; border-bottom:none; }
@@ -3569,26 +3559,14 @@ void main(){
     fitFrame();
   }
   // contain dentro do visor
-  // contain no visor. No celular a gaveta de vidro abre por cima da imagem;
-  // no desktop o menu fica na base e a imagem inteira cabe no espaço acima
-  // dele e dos controles (sem nenhuma parte coberta)
+  // contain no visor; a gaveta de vidro abre por cima, sem mudar a imagem
   function fitFrame(){
     if(!RW || !RH) return;
-    let vw = viewport.clientWidth, vh = viewport.clientHeight, top = vh/2;
-    const dock = typeof sheet !== 'undefined' && sheet.dataset.open === 'true' && isDesktop();
-    if(dock){
-      const dockH = sheet.offsetHeight + 16;
-      app.style.setProperty('--dock-h', dockH + 'px');
-      const hud = document.querySelector('.hud-bottom').offsetHeight + 12;
-      const topHud = document.querySelector('.hud-top').offsetHeight;
-      vh = Math.max(80, vh - dockH - hud - topHud);
-      top = topHud + vh/2;
-    }
+    const vw = viewport.clientWidth, vh = viewport.clientHeight;
     let w = vw, h = vw*RH/RW;
     if(h > vh){ h = vh; w = vh*RW/RH; }
     frame.style.width = Math.round(w) + 'px';
     frame.style.height = Math.round(h) + 'px';
-    frame.style.top = Math.round(top) + 'px';
   }
   new ResizeObserver(fitFrame).observe(viewport);
   // durante a gravação o tamanho do vídeo fica travado
@@ -4324,13 +4302,7 @@ void main(){
     sheet.dataset.open = open;
     app.classList.toggle('sheet-open', open);
     btnSheet.setAttribute('aria-expanded', open);
-    requestAnimationFrame(fitFrame);
   }
-  // desktop: todas as seções abertas lado a lado (sem acordeão); o tamanho
-  // do menu muda com o look e a IA, então a imagem se reajusta junto
-  if(isDesktop()) document.querySelectorAll('#sheet details.panel').forEach(d=>{ d.removeAttribute('name'); d.open = true; });
-  const refit = new ResizeObserver(()=>fitFrame());
-  [sheet, document.querySelector('.hud-bottom'), document.querySelector('.hud-top')].forEach(el=>refit.observe(el));
   btnSheet.addEventListener('click', ()=>setSheet(sheet.dataset.open !== 'true'));
   $('btnSheetClose').addEventListener('click', ()=>setSheet(false));
   window.addEventListener('keydown', e=>{ if(e.key === 'Escape' && sheet.dataset.open === 'true' && !isDesktop()) setSheet(false); });
