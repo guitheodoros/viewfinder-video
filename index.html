@@ -665,6 +665,13 @@
 
     <details class="panel" name="painel" id="panelLook" style="display:none;">
       <summary><h2>Ajustes do look</h2></summary>
+      <div class="row nv-only"><label>fósforo</label>
+        <div class="toggle-group" id="nvPhosphorGroup">
+          <button data-v="green" class="active">verde</button>
+          <button data-v="white">p&amp;b</button>
+        </div>
+      </div>
+      <div class="check nv-only"><input type="checkbox" id="nvInvert"><label for="nvInvert">inverter (negativo)</label></div>
       <div class="row"><label for="lkSat">saturação</label><input type="range" id="lkSat" autocomplete="off" min="0" max="200"><span class="val" id="lkSatVal"></span></div>
       <div class="row"><label for="lkTemp">frio ↔ quente</label><input type="range" id="lkTemp" autocomplete="off" min="-100" max="100"><span class="val" id="lkTempVal"></span></div>
       <div class="row"><label for="lkTint">magenta ↔ verde</label><input type="range" id="lkTint" autocomplete="off" min="-100" max="100"><span class="val" id="lkTintVal"></span></div>
@@ -974,7 +981,7 @@
     nightvision: {
       sensor:{ res:640, pixel:false, diffusion:10, msx:0, bloom:70 },
       noise:{ grain:34, size:1, vignette:45, fpn:0 },
-      grade:{ sat:0, temp:0, tint:0, exposure:25, contrast:15, lift:4, keepRed:0, sharpen:20, lines:0 },
+      grade:{ sat:0, temp:0, tint:0, exposure:25, contrast:15, lift:4, keepRed:0, sharpen:20, lines:0, phosphor:'green', invert:false },
     },
     camcorder: {
       sensor:{ res:0, pixel:false, diffusion:0, msx:0, bloom:10 },
@@ -1192,6 +1199,8 @@ uniform vec2 uSeed;
 uniform vec2 uSensorPx;
 uniform vec2 uLineCount;
 uniform float uAspect;
+uniform int uNvWhite;
+uniform int uNvInvert;
 float hash(vec2 p){
   uvec2 q = uvec2(ivec2(p) + 8192);
   q = q*1664525u + 1013904223u;
@@ -1214,10 +1223,18 @@ void main(){
     // intensificador: só luminância, sombras levantadas pelo ganho, fósforo
     // verde (P43) que chega quase no branco nas altas luzes
     float v = 1.0 - pow(1.0 - clamp(l, 0.0, 1.0), 1.7);
+    // negativo: claro vira escuro (o halo das luzes continua claro por cima)
+    if(uNvInvert == 1) v = 1.0 - v;
     v = uLift + v*(1.0 - uLift);
-    c = mix(vec3(0.0, 0.03, 0.005), vec3(0.42, 1.0, 0.32), v);
-    c = mix(c, vec3(0.88, 1.0, 0.84), smoothstep(0.78, 1.0, v));
-    tint = vec3(0.55, 1.0, 0.5);
+    if(uNvWhite == 1){
+      // fósforo branco (P45): preto e branco levemente frio
+      c = mix(vec3(0.01, 0.012, 0.016), vec3(0.93, 0.96, 1.0), v);
+      tint = vec3(0.9, 0.95, 1.0);
+    } else {
+      c = mix(vec3(0.0, 0.03, 0.005), vec3(0.42, 1.0, 0.32), v);
+      c = mix(c, vec3(0.88, 1.0, 0.84), smoothstep(0.78, 1.0, v));
+      tint = vec3(0.55, 1.0, 0.5);
+    }
   } else {
     float redness = clamp((c.r - max(c.g, c.b))*3.0, 0.0, 1.0);
     c = mix(vec3(l), c, mix(uSat, max(uSat, 1.1), redness*uKeepRed));
@@ -1698,6 +1715,8 @@ void main(){
       bindTex(3, bloomT ? bloomT.tex : emptyTex, L.uBloomTex);
       gl.uniform1i(L.uLook, { cctv:1, camcorder:2, nightvision:3 }[state.look] || 2);
       gl.uniform1f(L.uAspect, W/H);
+      gl.uniform1i(L.uNvWhite, g.phosphor === 'white' ? 1 : 0);
+      gl.uniform1i(L.uNvInvert, g.invert ? 1 : 0);
       gl.uniform1f(L.uSat, g.sat/100);
       gl.uniform1f(L.uTemp, g.temp/100);
       gl.uniform1f(L.uTint, g.tint/100);
@@ -3025,6 +3044,7 @@ void main(){
     // night vision é monocromático: sem saturação nem balanço de branco; "linhas" vira o tubo
     const nv = state.look === 'nightvision';
     ['lkSat', 'lkTemp', 'lkTint'].forEach(id=>{ $(id).closest('.row').style.display = nv ? 'none' : ''; });
+    document.querySelectorAll('.nv-only').forEach(el=>{ el.style.display = nv ? '' : 'none'; });
     $('lkLinesLabel').textContent = nv ? 'tubo (ocular)' : 'linhas';
   }
   const lookCtl = bindToggle('lookGroup', ()=>state.look, v=>switchLook(v));
@@ -3032,6 +3052,10 @@ void main(){
    ['lkLift','lift', pct], ['lkKeepRed','keepRed', pct], ['lkSharpen','sharpen', pct], ['lkLines','lines', pct]].forEach(([id, key, fmt])=>{
     gradeCtls.push(bindRange(id, ()=>state.grade[key], v=>state.grade[key] = v, fmt || (v=>(v > 0 ? '+' : '') + v)));
   });
+  // night vision: fósforo verde ou p&b, e negativo
+  gradeCtls.push(bindToggle('nvPhosphorGroup', ()=>state.grade.phosphor || 'green', v=>state.grade.phosphor = v));
+  const nvInvert = bindCheck('nvInvert', ()=>!!state.grade.invert, v=>state.grade.invert = v);
+  gradeCtls.push({ sync(){ nvInvert.checked = !!state.grade.invert; } });
   syncLookUI();
 
   // grade multicâmera
