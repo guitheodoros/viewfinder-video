@@ -3048,9 +3048,9 @@ void main(){
     camcorder: { ctls:['exposure', 'contrast', 'sharpen', 'sat'], lean:true,
       labels:{ exposure:'ganho' },
       hint:'o ganho clareia ou escurece a imagem como o ajuste de ganho da câmera; a nitidez é o contorno eletrônico típico do vídeo de camcorder.' },
-    cctv: { ctls:['exposure', 'contrast', 'sharpen', 'sat'], lean:true,
+    cctv: { ctls:['exposure', 'contrast', 'lines', 'sat'], lean:true,
       labels:{ exposure:'ganho' },
-      hint:'o ganho clareia ou escurece a imagem; com a saturação baixa os vermelhos continuam aparecendo, como nas câmeras de segurança.' },
+      hint:'o ganho clareia ou escurece a imagem; as linhas são o entrelaçado do vídeo analógico; com a saturação baixa os vermelhos continuam aparecendo, como nas câmeras de segurança.' },
   };
   const LOOK_LABELS = { exposure:'exposição', lines:'linhas' };
   function syncLookUI(){
