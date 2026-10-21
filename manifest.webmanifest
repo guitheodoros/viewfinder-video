@@ -1,7 +1,7 @@
 {
   "name": "Viewfinder Video",
   "short_name": "Viewfinder",
-  "description": "Câmera térmica, CCTV e camcorder ao vivo, direto no navegador.",
+  "description": "Câmera térmica, CCTV, camcorder e night vision ao vivo, direto no navegador.",
   "lang": "pt-BR",
   "start_url": "./",
   "scope": "./",
