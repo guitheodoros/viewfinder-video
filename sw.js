@@ -1,7 +1,7 @@
 // Viewfinder Video: guarda a página, as fontes e o motor/modelos da IA pra
 // o app abrir sem internet depois do primeiro uso. Trocar VERSION limpa o
 // cache antigo.
-const VERSION = 'vfv-3';
+const VERSION = 'vfv-4';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './media/demo.mp4', './media/demo-poster.jpg'];
 
 self.addEventListener('install', e=>{
@@ -18,7 +18,9 @@ self.addEventListener('fetch', e=>{
   const url = new URL(req.url);
   // a página: rede primeiro (pega a versão nova), cache só sem internet
   if(req.mode === 'navigate'){
-    e.respondWith(fetch(req).then(res=>{
+    // no-cache: sempre confere com o servidor (o GitHub Pages deixa o
+    // navegador guardar a página por 10 min e o app abriria a versão velha)
+    e.respondWith(fetch(req, { cache:'no-cache' }).then(res=>{
       const copy = res.clone();
       caches.open(VERSION).then(c=>c.put('./index.html', copy));
       return res;
