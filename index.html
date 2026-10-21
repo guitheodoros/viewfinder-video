@@ -623,6 +623,34 @@
   @media (max-width: 899px){
     #sheet{ border-radius:22px 22px 0 0; border-bottom:none; }
   }
+  /* celular deitado: a gaveta vira um painel de vidro na lateral direita e a
+     imagem fica inteira à esquerda (como no desktop) */
+  @media (max-width: 899px) and (orientation: landscape) and (max-height: 600px){
+    #sheet{
+      left:auto; top:8px; bottom:8px; right:max(8px, env(safe-area-inset-right)); width:300px; height:auto;
+      border-radius:18px; border-bottom:1px solid rgba(255,255,255,.16);
+      transform:translateX(calc(100% + 24px));
+    }
+    #sheet[data-open="true"]{ transform:none; }
+    .sheet-grab{ display:none; }
+    .sheet-head{ padding-top:10px; }
+    #app.sheet-open .hud-bottom{ display:flex; right:calc(300px + 16px); }
+    #app.sheet-open .hud-top{ right:calc(300px + 16px); }
+  }
+  /* celular deitado (tela baixa): HUD mais compacto pra não cobrir a imagem */
+  @media (orientation: landscape) and (max-height: 600px){
+    .hud{ padding:8px 14px; }
+    .hud-top{ padding-top:max(8px, env(safe-area-inset-top)); }
+    .hud-bottom{ gap:8px; padding-bottom:max(10px, env(safe-area-inset-bottom)); }
+    .round-btn{ width:38px; height:38px; }
+    .round-btn svg{ width:17px; height:17px; }
+    .round-btn.small{ width:30px; height:30px; }
+    .rec-btn{ width:56px; height:56px; border-width:3px; }
+    .rec-btn::after{ width:42px; height:42px; }
+    .rec-btn.export svg{ width:24px; height:24px; }
+    .look-chips button{ padding:6px 10px; font-size:10px; }
+    .transport{ font-size:10px; }
+  }
   /* HUD: vidro nos botões e nos chips */
   .round-btn, .look-chips{
     background:rgba(20,20,26,.32); border:1px solid rgba(255,255,255,.22); border-top-color:rgba(255,255,255,.34);
@@ -3564,9 +3592,9 @@ void main(){
   // sobra à esquerda (sem nenhuma parte coberta)
   function fitFrame(){
     if(!RW || !RH) return;
-    const docked = typeof sheet !== 'undefined' && sheet.dataset.open === 'true' && isDesktop();
+    const docked = typeof sheet !== 'undefined' && sheet.dataset.open === 'true' && sideSheet();
     // com a gaveta: 16 px de folga à esquerda e entre a imagem e a gaveta
-    const pad = docked ? 16 : 0, side = docked ? 372 : 0;
+    const pad = docked ? 16 : 0, side = docked ? sheet.offsetWidth + 32 : 0;
     const vw = viewport.clientWidth - side - pad, vh = viewport.clientHeight;
     let w = vw, h = vw*RH/RW;
     if(h > vh){ h = vh; w = vh*RW/RH; }
@@ -4304,6 +4332,10 @@ void main(){
   --------------------------------------------------------------------- */
   const sheet = $('sheet'), app = $('app'), btnSheet = $('btnSheet');
   const isDesktop = ()=>matchMedia('(min-width: 900px)').matches;
+  // gaveta na lateral (desktop, ou celular deitado): a imagem fica ao lado dela
+  const SIDE_MQ = matchMedia('(min-width: 900px), (orientation: landscape) and (max-height: 600px)');
+  const sideSheet = ()=>SIDE_MQ.matches;
+  SIDE_MQ.addEventListener('change', ()=>fitFrame());
   function setSheet(open){
     sheet.dataset.open = open;
     app.classList.toggle('sheet-open', open);
